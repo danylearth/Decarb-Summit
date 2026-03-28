@@ -1,0 +1,147 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile in the platform",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "handle": { "type": "string" },
+        "role": { "type": "string" },
+        "company": { "type": "string" },
+        "avatar": { "type": "string" },
+        "bio": { "type": "string" },
+        "linkedin": { "type": "string" },
+        "twitter": { "type": "string" },
+        "onboarded": { "type": "boolean" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "membership": {
+          "type": "object",
+          "properties": {
+            "plan": { "type": "string" },
+            "price": { "type": "string" },
+            "status": { "type": "string" },
+            "nextBilling": { "type": "string" }
+          }
+        },
+        "preferences": {
+          "type": "object",
+          "properties": {
+            "pushNotifications": { "type": "boolean" },
+            "publicProfile": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["id", "name", "handle"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "A post in the community feed",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "content": { "type": "string" },
+        "image": { "type": "string" },
+        "likes": { "type": "integer" },
+        "comments": { "type": "integer" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "content", "timestamp"]
+    },
+    "Resource": {
+      "title": "Resource",
+      "description": "A resource in the hub (video, report, etc.)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["Video", "Report", "Insight"] },
+        "category": { "type": "string" },
+        "author": { "type": "string" },
+        "duration": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "content": { "type": "string" }
+      },
+      "required": ["id", "title", "type", "author"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment on a post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isEdited": { "type": "boolean" }
+      },
+      "required": ["id", "authorId", "content", "timestamp"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A direct message between users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "voiceNote": {
+          "type": "object",
+          "properties": {
+            "duration": { "type": "string" },
+            "waveform": { "type": "array", "items": { "type": "number" } }
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "size": { "type": "string" },
+              "type": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["senderId", "receiverId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{userId}/saved_resources/{resourceId}": {
+      "schema": { "type": "object", "properties": { "resourceId": { "type": "string" }, "savedAt": { "type": "string", "format": "date-time" } } },
+      "description": "Resources saved by the user"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Community posts"
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on a post"
+    },
+    "/posts/{postId}/likes/{userId}": {
+      "schema": { "type": "object", "properties": { "timestamp": { "type": "string", "format": "date-time" } } },
+      "description": "Users who liked the post"
+    },
+    "/resources/{resourceId}": {
+      "schema": "Resource",
+      "description": "Learning resources"
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Direct messages between users"
+    }
+  }
+}
