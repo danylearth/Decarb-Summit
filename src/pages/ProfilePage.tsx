@@ -1,21 +1,63 @@
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { MOCK_USERS } from '../constants';
 import { Avatar, Button } from '../components/UI';
-import { ArrowLeft, Settings, MapPin, Briefcase, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter } from 'lucide-react';
+import { ArrowLeft, Settings, MapPin, Briefcase, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { User } from '../types';
 
 export function ProfilePage() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useUser();
+  const [profileUser, setProfileUser] = useState<User | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
-  // If no userId in params, we are viewing our own profile
   const targetUserId = userId || currentUser?.id;
   const isOwnProfile = targetUserId === currentUser?.id;
 
-  // Fallback to MOCK_USERS if not current user
-  const user = isOwnProfile ? currentUser : (MOCK_USERS[targetUserId as string] || MOCK_USERS.elena);
+  useEffect(() => {
+    if (isOwnProfile || !targetUserId) return;
+    setProfileLoading(true);
+    const fetchProfile = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', targetUserId));
+        if (userDoc.exists()) {
+          setProfileUser({ id: userDoc.id, ...userDoc.data() } as User);
+        } else {
+          setNotFound(true);
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, `users/${targetUserId}`);
+        setNotFound(true);
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+    fetchProfile();
+  }, [targetUserId, isOwnProfile]);
+
+  const user = isOwnProfile ? currentUser : profileUser;
+
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-accent" />
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <p className="text-on-surface-variant font-medium">User not found.</p>
+        <Button onClick={() => navigate(-1)} variant="outline" className="rounded-full">Go Back</Button>
+      </div>
+    );
+  }
 
   if (!user) return null;
 
@@ -36,7 +78,7 @@ export function ProfilePage() {
         </button>
 
         {/* Profile Hero */}
-        <section className="flex flex-col items-center text-center mb-10">
+        <section className="flex flex-col md:flex-row md:items-start md:gap-12 items-center text-center md:text-left mb-10">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -58,8 +100,8 @@ export function ProfilePage() {
           >
             <h2 className="text-3xl font-black tracking-tighter text-white mb-1">{user.name}</h2>
             <p className="text-primary-accent font-bold uppercase tracking-widest text-xs mb-4">{user.role} @ {user.company}</p>
-            
-            <div className="flex flex-wrap justify-center gap-4 text-on-surface-variant/60 text-[11px] font-bold uppercase tracking-widest mb-8">
+
+            <div className="flex flex-wrap justify-center md:justify-start gap-4 text-on-surface-variant/60 text-[11px] font-bold uppercase tracking-widest mb-8">
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5" />
                 <span>London, UK</span>
@@ -70,7 +112,7 @@ export function ProfilePage() {
               </div>
             </div>
 
-            <div className="flex gap-3 w-full max-w-xs mx-auto">
+            <div className="flex gap-3 w-full max-w-xs mx-auto md:mx-0">
               {!isOwnProfile ? (
                 <Button 
                   onClick={() => navigate(`/chat/${user.id}`)}

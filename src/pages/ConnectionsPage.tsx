@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, limit, where, orderBy } from 'firebase/firestore';
-import { MOCK_MESSAGES, MOCK_USERS } from '../constants';
+import { collection, query, onSnapshot, limit, where, orderBy, doc, getDoc } from 'firebase/firestore';
+// Real data from Firestore - no mock fallbacks
 import { Avatar, Button, cn } from '../components/UI';
 import { X, Star, Sparkles, ChevronRight, SlidersHorizontal, Search, Filter, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { User } from '../types';
 import { useUser } from '../context/UserContext';
 
@@ -19,14 +19,23 @@ interface Conversation {
 }
 
 export function ConnectionsPage() {
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'discovery' | 'messages'>('discovery');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const navigate = useNavigate();
+
+  // React to search param changes (used by tutorial)
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'messages') setActiveTab('messages');
+    else if (tab === 'discovery') setActiveTab('discovery');
+    if (searchParams.get('filters') === 'true') setIsFilterModalOpen(true);
+  }, [searchParams]);
   const { user: currentUser } = useUser();
   const [discoveryUsers, setDiscoveryUsers] = useState<User[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [messageSearch, setMessageSearch] = useState('');
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
   const [filters, setFilters] = useState({
@@ -43,9 +52,7 @@ export function ConnectionsPage() {
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (snapshot.empty) {
-        // Fallback to mock data if Firestore is empty
-        const mockUsers = Object.values(MOCK_USERS).filter(u => u.id !== currentUser?.id);
-        setDiscoveryUsers(mockUsers);
+        setDiscoveryUsers([]);
         setCurrentIndex(0);
         setLoading(false);
         return;
@@ -91,16 +98,16 @@ export function ConnectionsPage() {
       orderBy('timestamp', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const convMap = new Map<string, any>();
 
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
+      snapshot.docs.forEach(d => {
+        const data = d.data();
         const otherUserId = data.senderId === currentUser.id ? data.receiverId : data.senderId;
-        
+
         if (!convMap.has(otherUserId)) {
           convMap.set(otherUserId, {
-            id: doc.id,
+            id: d.id,
             lastMessage: data.text || (data.voiceNote ? "Voice Note" : "Attachment"),
             timestamp: data.timestamp,
             otherUserId
@@ -109,15 +116,36 @@ export function ConnectionsPage() {
       });
 
       const uniqueConvs = Array.from(convMap.values());
-      
-      const formattedConvs = uniqueConvs.map(c => {
-        const otherUser = MOCK_USERS[c.otherUserId] || {
-          id: c.otherUserId,
-          name: 'User',
-          avatar: `https://picsum.photos/seed/${c.otherUserId}/200/200`,
-          role: 'Professional',
-          company: 'Unknown'
-        };
+
+      // Fetch real user data for each conversation partner
+      const formattedConvs = await Promise.all(uniqueConvs.map(async (c) => {
+        let otherUser: User;
+        try {
+          const userDoc = await getDoc(doc(db, 'users', c.otherUserId));
+          if (userDoc.exists()) {
+            otherUser = { id: userDoc.id, ...userDoc.data() } as User;
+          } else {
+            otherUser = {
+              id: c.otherUserId,
+              name: 'User',
+              avatar: `https://picsum.photos/seed/${c.otherUserId}/200/200`,
+              role: 'Professional',
+              company: 'Unknown',
+              handle: 'user',
+              tags: []
+            } as User;
+          }
+        } catch {
+          otherUser = {
+            id: c.otherUserId,
+            name: 'User',
+            avatar: `https://picsum.photos/seed/${c.otherUserId}/200/200`,
+            role: 'Professional',
+            company: 'Unknown',
+            handle: 'user',
+            tags: []
+          } as User;
+        }
 
         return {
           id: c.id,
@@ -125,9 +153,9 @@ export function ConnectionsPage() {
           lastMessage: c.lastMessage,
           timestamp: c.timestamp?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'Just now',
           rawTimestamp: c.timestamp,
-          isUnread: false // Simplified for prototype
+          isUnread: false
         } as Conversation;
-      });
+      }));
 
       setConversations(formattedConvs);
     }, (err) => {
@@ -136,47 +164,6 @@ export function ConnectionsPage() {
 
     return () => unsubscribe();
   }, [currentUser]);
-
-  useEffect(() => {
-    setLoading(true);
-    let q = query(collection(db, 'users'), limit(50));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        // Fallback to mock data if Firestore is empty
-        const mockUsers = Object.values(MOCK_USERS).filter(u => u.id !== currentUser?.id);
-        setDiscoveryUsers(mockUsers);
-        setCurrentIndex(0);
-        setLoading(false);
-        return;
-      }
-      let users = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as User))
-        .filter(u => u.id !== currentUser?.id);
-
-      // Client-side filtering for better UX in prototype
-      if (filters.role) {
-        users = users.filter(u => u.role.toLowerCase().includes(filters.role.toLowerCase()));
-      }
-      if (filters.company) {
-        users = users.filter(u => u.company.toLowerCase().includes(filters.company.toLowerCase()));
-      }
-      if (filters.selectedTags.length > 0) {
-        users = users.filter(u => 
-          filters.selectedTags.every(tag => u.tags?.includes(tag))
-        );
-      }
-
-      setDiscoveryUsers(users);
-      setCurrentIndex(0);
-      setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'users');
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser, filters]);
 
   const activeUser = discoveryUsers[currentIndex];
 
@@ -203,7 +190,7 @@ export function ConnectionsPage() {
   };
 
   return (
-    <main className="relative min-h-screen flex flex-col pb-32">
+    <main className="relative min-h-screen flex flex-col pb-32 max-w-6xl mx-auto">
       {/* Header & Toggle */}
       <div className="px-6 pt-12 pb-6 sticky top-0 z-40 bg-background/80 backdrop-blur-md">
         <div className="flex justify-between items-center mb-6 h-16">
@@ -260,14 +247,14 @@ export function ConnectionsPage() {
           </button>
         </div>
 
-        <div className="bg-surface-container-low p-1.5 rounded-full flex items-center w-full shadow-inner">
+        <div className="bg-surface-container-low p-1.5 rounded-full flex items-center w-full shadow-inner md:hidden">
           <button 
             onClick={() => setActiveTab('discovery')}
             className={`flex-1 py-3 rounded-full font-bold text-xs tracking-widest uppercase transition-all duration-300 ${
               activeTab === 'discovery' ? 'bg-primary-accent text-on-primary-accent shadow-lg' : 'text-on-surface/50'
             }`}
           >
-            Requests
+            Match
           </button>
           <button 
             onClick={() => setActiveTab('messages')}
@@ -280,14 +267,103 @@ export function ConnectionsPage() {
         </div>
       </div>
 
+      {/* Desktop: side-by-side layout */}
+      <div className="hidden md:grid md:grid-cols-2 md:gap-6 px-6 flex-1">
+        {/* Discovery column */}
+        <div className="flex flex-col">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-on-surface/60 mb-6">Requests</h2>
+          <div className="flex-1 relative flex items-start justify-center">
+            {loading ? (
+              <div className="flex flex-col items-center gap-4 pt-20">
+                <div className="w-8 h-8 animate-spin text-primary-accent"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" strokeDasharray="60 40"/></svg></div>
+              </div>
+            ) : activeUser ? (
+              <motion.div
+                key={activeUser.id}
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="relative w-full h-[500px] rounded-xl overflow-hidden shadow-2xl bg-surface-container group"
+              >
+                <div
+                  className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
+                  style={{ backgroundImage: `url(${activeUser.avatar})` }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent opacity-95" />
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 p-8 space-y-4">
+                  <div className="space-y-1">
+                    <h2 className="text-3xl font-black tracking-tight text-white leading-none">{activeUser.name}</h2>
+                    <p className="text-primary-accent font-bold text-lg">{activeUser.role} @ {activeUser.company}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {activeUser.tags?.map(tag => (
+                      <span key={tag} className="px-3 py-1 bg-surface-container-highest/90 backdrop-blur-md rounded-full text-xs font-bold text-on-surface-variant">{tag}</span>
+                    ))}
+                  </div>
+                  <p className="text-white/80 text-sm line-clamp-2 font-medium">{activeUser.bio || "No bio provided."}</p>
+                  <div className="pt-4 flex items-center justify-between gap-4">
+                    <button onClick={handleRemove} className="w-14 h-14 rounded-full bg-surface-container-highest/40 backdrop-blur-xl border border-white/5 flex items-center justify-center active:scale-90 transition-all">
+                      <X className="w-7 h-7 text-red-400" />
+                    </button>
+                    <Button onClick={() => navigate(`/chat/${activeUser.id}`)} className="flex-1 py-4 text-sm uppercase tracking-widest">OFFER</Button>
+                    <button onClick={handleStar} className="w-14 h-14 rounded-full bg-surface-container-highest/40 backdrop-blur-xl border border-white/5 flex items-center justify-center active:scale-90 transition-all">
+                      <Star className="w-7 h-7 text-primary-accent" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="text-center pt-20">
+                <p className="text-on-surface-variant font-medium italic">No more catalysts found.</p>
+                <Button onClick={() => setCurrentIndex(0)} className="mt-4 text-xs uppercase tracking-widest">Refresh</Button>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Conversations column */}
+        <div className="flex flex-col overflow-y-auto max-h-[calc(100vh-200px)]">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-on-surface/60 mb-6">Conversations</h2>
+          <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 mb-6">
+            {discoveryUsers.slice(0, 8).map((u) => (
+              <div key={u.id} onClick={() => navigate(`/chat/${u.id}`)} className="flex-shrink-0 flex flex-col items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                <Avatar src={u.avatar} alt={u.name} size="lg" isOnline={(u as any).isOnline} hasStory />
+                <span className="text-[10px] font-bold text-on-surface">{u.name.split(' ')[0]}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-3">
+            {conversations.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-on-surface-variant font-medium text-sm">No conversations yet.</p>
+                <p className="text-on-surface-variant/60 text-xs mt-1">Start by sending an offer to someone.</p>
+              </div>
+            ) : conversations.map((conv: any) => (
+              <div key={conv.id} onClick={() => navigate(`/chat/${conv.otherUser.id}`)} className="group relative p-4 rounded-xl bg-surface-container-low/40 hover:bg-surface-container transition-all cursor-pointer">
+                <div className="flex items-center gap-3">
+                  <Avatar src={conv.otherUser.avatar} alt={conv.otherUser.name} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-0.5">
+                      <h3 className="font-bold text-on-surface truncate text-sm">{conv.otherUser.name}</h3>
+                      <span className="text-[10px] font-bold text-on-surface/40">{conv.timestamp}</span>
+                    </div>
+                    <p className="text-xs text-on-surface/60 truncate">{conv.lastMessage}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile: tabbed layout */}
       <AnimatePresence mode="wait">
         {activeTab === 'discovery' ? (
-          <motion.div 
+          <motion.div
             key="discovery"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="flex-1 px-4 flex flex-col"
+            className="flex-1 px-4 flex flex-col md:hidden"
           >
             {/* Discovery Card */}
             <div className="flex-1 relative flex items-center justify-center">
@@ -370,12 +446,12 @@ export function ConnectionsPage() {
             </div>
           </motion.div>
         ) : (
-          <motion.div 
+          <motion.div
             key="messages"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            className="px-6 space-y-12"
+            className="px-6 space-y-12 md:hidden"
           >
             {/* Active Matches */}
             <section>
@@ -410,13 +486,7 @@ export function ConnectionsPage() {
 
               <div className="space-y-4">
                 {(() => {
-                  const displayConversations = conversations.length > 0 ? conversations : MOCK_MESSAGES.map(m => ({
-                    id: m.id,
-                    otherUser: { ...m.sender, id: m.sender.id },
-                    lastMessage: m.lastMessage,
-                    timestamp: m.timestamp,
-                    isUnread: m.isUnread
-                  } as any));
+                  const displayConversations = conversations;
 
                   const filteredConversations = displayConversations.filter(conv => 
                     conv.otherUser.name.toLowerCase().includes(messageSearch.toLowerCase()) ||
@@ -429,13 +499,17 @@ export function ConnectionsPage() {
                         <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-4">
                           <Search className="w-6 h-6 text-on-surface-variant/40" />
                         </div>
-                        <p className="text-on-surface-variant font-medium italic text-sm">No conversations found matching "{messageSearch}"</p>
-                        <button 
+                        <p className="text-on-surface-variant font-medium italic text-sm">
+                          {messageSearch ? `No conversations found matching "${messageSearch}"` : 'No conversations yet. Start by sending an offer to someone.'}
+                        </p>
+                        {messageSearch && (
+                        <button
                           onClick={() => setMessageSearch('')}
                           className="mt-4 text-xs font-black uppercase tracking-widest text-primary-accent hover:underline"
                         >
                           Clear Search
                         </button>
+                        )}
                       </div>
                     );
                   }

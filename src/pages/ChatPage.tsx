@@ -1,11 +1,13 @@
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MOCK_USERS } from '../constants';
+// Real user data fetched from Firestore
 import { Avatar, Button } from '../components/UI';
 import { ArrowLeft, Info, Plus, Mic, Send, FileText, X, Paperclip, Play, Pause, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, limit } from 'firebase/firestore';
+import { db, auth, storage, handleFirestoreError, OperationType } from '../firebase';
+import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, limit, doc, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { User } from '../types';
 
 interface Attachment {
   name: string;
@@ -16,6 +18,7 @@ interface Attachment {
 interface VoiceNote {
   duration: string;
   waveform: number[];
+  url?: string;
 }
 
 interface Message {
@@ -28,15 +31,35 @@ interface Message {
   timestamp?: any;
   attachments?: Attachment[];
   voiceNote?: VoiceNote;
+  voiceNoteUrl?: string;
+  voiceNoteDuration?: string;
 }
 
 export function ChatPage() {
   const { userId } = useParams();
   const navigate = useNavigate();
-  const user = MOCK_USERS[userId as string] || MOCK_USERS.sarah;
+  const [chatPartner, setChatPartner] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
+  // Fetch real user data from Firestore
+  useEffect(() => {
+    if (!userId) return;
+    const fetchUser = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+          setChatPartner({ id: userDoc.id, ...userDoc.data() } as User);
+        } else {
+          setChatPartner({ id: userId, name: 'Unknown User', handle: 'unknown', role: '', company: '', avatar: `https://picsum.photos/seed/${userId}/200/200`, tags: [] } as User);
+        }
+      } catch {
+        setChatPartner({ id: userId, name: 'Unknown User', handle: 'unknown', role: '', company: '', avatar: `https://picsum.photos/seed/${userId}/200/200`, tags: [] } as User);
+      }
+    };
+    fetchUser();
+  }, [userId]);
+
   useEffect(() => {
     if (!auth.currentUser || !userId) return;
 
@@ -86,6 +109,10 @@ export function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordedBlobRef = useRef<Blob | null>(null);
+  const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -152,11 +179,35 @@ export function ChatPage() {
     return () => clearInterval(interval);
   }, [playingMessageIdx, isPlayingReview]);
 
-  const togglePlayback = (idx: number) => {
+  const togglePlayback = (idx: number, audioUrl?: string) => {
     if (playingMessageIdx === idx) {
+      // Pause
+      const audio = audioElementsRef.current.get(String(idx));
+      audio?.pause();
       setPlayingMessageIdx(null);
     } else {
+      // Stop any other playing audio
+      audioElementsRef.current.forEach(a => a.pause());
       setIsPlayingReview(false);
+
+      if (audioUrl) {
+        let audio = audioElementsRef.current.get(String(idx));
+        if (!audio) {
+          audio = new Audio(audioUrl);
+          audioElementsRef.current.set(String(idx), audio);
+        }
+        audio.currentTime = 0;
+        audio.ontimeupdate = () => {
+          if (audio!.duration) {
+            setPlaybackProgress((audio!.currentTime / audio!.duration) * 100);
+          }
+        };
+        audio.onended = () => {
+          setPlayingMessageIdx(null);
+          setPlaybackProgress(0);
+        };
+        audio.play().catch(() => {});
+      }
       setPlayingMessageIdx(idx);
       setPlaybackProgress(0);
     }
@@ -165,8 +216,29 @@ export function ChatPage() {
   const toggleReviewPlayback = () => {
     if (isPlayingReview) {
       setIsPlayingReview(false);
+      audioElementsRef.current.get('review')?.pause();
     } else {
+      audioElementsRef.current.forEach(a => a.pause());
       setPlayingMessageIdx(null);
+
+      if (recordedVoiceNote?.url) {
+        let audio = audioElementsRef.current.get('review');
+        if (!audio) {
+          audio = new Audio(recordedVoiceNote.url);
+          audioElementsRef.current.set('review', audio);
+        }
+        audio.currentTime = 0;
+        audio.ontimeupdate = () => {
+          if (audio!.duration) {
+            setPlaybackProgress((audio!.currentTime / audio!.duration) * 100);
+          }
+        };
+        audio.onended = () => {
+          setIsPlayingReview(false);
+          setPlaybackProgress(0);
+        };
+        audio.play().catch(() => {});
+      }
       setIsPlayingReview(true);
       setPlaybackProgress(0);
     }
@@ -180,14 +252,23 @@ export function ChatPage() {
     const participants = [auth.currentUser.uid, userId].sort();
     
     try {
-      if (recordedVoiceNote) {
+      if (recordedVoiceNote && recordedBlobRef.current) {
+        // Upload real audio to Firebase Storage
+        const audioRef = ref(storage, `voice-notes/${auth.currentUser.uid}/${Date.now()}.webm`);
+        const uploadResult = await uploadBytes(audioRef, recordedBlobRef.current);
+        const voiceNoteUrl = await getDownloadURL(uploadResult.ref);
+
         await addDoc(messagesRef, {
           senderId: auth.currentUser.uid,
           receiverId: userId,
           participants,
-          voiceNote: recordedVoiceNote,
+          voiceNoteUrl,
+          voiceNoteDuration: recordedVoiceNote.duration,
+          voiceNote: { duration: recordedVoiceNote.duration, waveform: recordedVoiceNote.waveform },
           timestamp: serverTimestamp()
         });
+        if (recordedVoiceNote.url) URL.revokeObjectURL(recordedVoiceNote.url);
+        recordedBlobRef.current = null;
         setRecordedVoiceNote(null);
         return;
       }
@@ -214,58 +295,84 @@ export function ChatPage() {
     }
   };
 
-  const handleToggleRecording = () => {
+  const handleToggleRecording = async () => {
     if (isRecording) {
-      // Stop and set for review
-      const voiceNote: VoiceNote = {
-        duration: formatDuration(recordingDuration),
-        waveform: Array.from({ length: 20 }, () => Math.random() * 100)
-      };
-      setRecordedVoiceNote(voiceNote);
+      // Stop recording
+      mediaRecorderRef.current?.stop();
+      mediaRecorderRef.current?.stream.getTracks().forEach(t => t.stop());
       setIsRecording(false);
     } else {
-      setRecordedVoiceNote(null);
-      setIsRecording(true);
+      // Start recording
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          recordedBlobRef.current = blob;
+          const voiceNote: VoiceNote = {
+            duration: formatDuration(recordingDuration),
+            waveform: Array.from({ length: 20 }, () => Math.random() * 100),
+            url: URL.createObjectURL(blob)
+          };
+          setRecordedVoiceNote(voiceNote);
+        };
+
+        mediaRecorder.start();
+        setRecordedVoiceNote(null);
+        setIsRecording(true);
+      } catch (err) {
+        console.error('Microphone access denied:', err);
+        alert('Microphone access is required to record voice notes.');
+      }
     }
   };
 
   const discardVoiceNote = () => {
+    if (recordedVoiceNote?.url) URL.revokeObjectURL(recordedVoiceNote.url);
+    recordedBlobRef.current = null;
     setRecordedVoiceNote(null);
   };
 
   return (
-    <div className="text-on-surface antialiased overflow-hidden h-screen flex flex-col bg-background">
+    <div className="text-on-surface antialiased overflow-hidden h-screen flex flex-col bg-background md:bg-background/50">
       {/* Header */}
-      <header className="fixed top-0 w-full z-50 px-6 py-6 bg-background/60 backdrop-blur-md border-b border-white/5 shadow-2xl">
+      <header className="fixed top-0 w-full md:max-w-2xl md:left-1/2 md:-translate-x-1/2 z-50 px-6 py-6 bg-background/60 backdrop-blur-md border-b border-white/5 shadow-2xl md:border-x">
         <div className="flex items-center justify-between mb-6">
           <button onClick={() => navigate(-1)} className="text-on-surface active:scale-95 transition-transform">
             <ArrowLeft className="w-7 h-7" />
           </button>
-          <button 
-            onClick={() => navigate(`/profile/${user.id}`)}
+          <button
+            onClick={() => chatPartner && navigate(`/profile/${chatPartner.id}`)}
             className="text-primary-accent active:scale-95 transition-transform"
           >
             <Info className="w-6 h-6" />
           </button>
         </div>
-        
+
         <div className="flex items-center gap-5">
           <div className="relative">
-            <Avatar src={user.avatar} alt={user.name} size="lg" isOnline={user.isOnline} />
+            <Avatar src={chatPartner?.avatar || ''} alt={chatPartner?.name || ''} size="lg" isOnline={(chatPartner as any)?.isOnline} />
           </div>
           <div className="flex flex-col">
             <h1 className="text-3xl font-black tracking-tight text-primary-accent uppercase leading-none">
-              {user.name}
+              {chatPartner?.name || 'Loading...'}
             </h1>
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-on-surface-variant mt-2 opacity-80">
-              {user.role}
+              {chatPartner?.role || ''}
             </p>
           </div>
         </div>
       </header>
 
       {/* Messages */}
-      <main className="flex-grow pt-48 pb-40 px-6 overflow-y-auto space-y-8 hide-scrollbar">
+      <main className="flex-grow pt-48 pb-40 px-6 overflow-y-auto space-y-8 hide-scrollbar md:max-w-2xl md:mx-auto md:border-x md:border-white/5">
         <AnimatePresence initial={false}>
           {messages.length === 0 ? (
             <motion.div 
@@ -302,10 +409,10 @@ export function ChatPage() {
                   } px-5 py-4 rounded-3xl shadow-xl space-y-3`}>
                     {msg.text && <p className="text-sm leading-relaxed font-medium">{msg.text}</p>}
                     
-                    {msg.voiceNote && (
+                    {(msg.voiceNote || msg.voiceNoteUrl) && (
                       <div className="flex items-center gap-4 py-2 min-w-[200px]">
-                        <button 
-                          onClick={() => togglePlayback(idx)}
+                        <button
+                          onClick={() => togglePlayback(idx, msg.voiceNoteUrl)}
                           className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-90 ${msg.sender === 'me' ? 'bg-white/20 hover:bg-white/30' : 'bg-primary-accent/20 text-primary-accent hover:bg-primary-accent/30'}`}
                         >
                           {playingMessageIdx === idx ? (
@@ -315,8 +422,8 @@ export function ChatPage() {
                           )}
                         </button>
                         <div className="flex-1 flex items-end gap-[2px] h-8 relative">
-                          {msg.voiceNote.waveform.map((h, i) => {
-                            const isPlayed = playingMessageIdx === idx && (i / msg.voiceNote!.waveform.length) * 100 <= playbackProgress;
+                          {(msg.voiceNote?.waveform || Array.from({ length: 20 }, () => Math.random() * 100)).map((h, i, arr) => {
+                            const isPlayed = playingMessageIdx === idx && (i / arr.length) * 100 <= playbackProgress;
                             return (
                               <div 
                                 key={i} 
@@ -331,9 +438,7 @@ export function ChatPage() {
                           })}
                         </div>
                         <span className="text-[10px] font-bold opacity-60">
-                          {playingMessageIdx === idx 
-                            ? formatDuration(Math.ceil((playbackProgress / 100) * parseInt(msg.voiceNote.duration.split(':')[1]))) 
-                            : msg.voiceNote.duration}
+                          {msg.voiceNoteDuration || msg.voiceNote?.duration || '0:00'}
                         </span>
                       </div>
                     )}
@@ -369,7 +474,7 @@ export function ChatPage() {
       </main>
 
       {/* Input Area */}
-      <footer className="fixed bottom-0 left-0 w-full px-6 pb-8 pt-4 bg-gradient-to-t from-background via-background/95 to-transparent z-50">
+      <footer className="fixed bottom-0 left-0 w-full md:max-w-2xl md:left-1/2 md:-translate-x-1/2 px-6 pb-8 pt-4 bg-gradient-to-t from-background via-background/95 to-transparent z-50">
         <div className="max-w-4xl mx-auto space-y-4">
           {/* File Previews */}
           <AnimatePresence>

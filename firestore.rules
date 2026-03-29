@@ -108,14 +108,16 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 && data.name.size() < 50 &&
              (!('email' in data) || (isValidEmail(data.email) && data.email.size() < 100)) &&
              data.handle is string && data.handle.size() > 0 && data.handle.size() < 20 &&
-             (!('avatar' in data) || (isValidUrl(data.avatar) && data.avatar.size() < 500)) &&
-             (!('bio' in data) || (data.bio is string && data.bio.size() < 200)) &&
-             (!('linkedin' in data) || (isValidUrl(data.linkedin) && data.linkedin.size() < 500)) &&
-             (!('twitter' in data) || (isValidUrl(data.twitter) && data.twitter.size() < 500)) &&
+             (!('avatar' in data) || data.avatar is string) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('linkedin' in data) || data.linkedin is string) &&
+             (!('twitter' in data) || data.twitter is string) &&
              (!('onboarded' in data) || data.onboarded is bool) &&
              (!('tags' in data) || (data.tags is list && data.tags.size() < 20)) &&
              (!('membership' in data) || data.membership is map) &&
-             (!('preferences' in data) || data.preferences is map);
+             (!('preferences' in data) || data.preferences is map) &&
+             (!('role' in data) || data.role is string) &&
+             (!('company' in data) || data.company is string);
     }
 
     function isValidPost(data) {

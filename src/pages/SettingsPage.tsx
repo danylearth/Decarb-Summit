@@ -4,8 +4,8 @@ import { useUser } from '../context/UserContext';
 import { Avatar, Card, cn } from '../components/UI';
 import { User, CreditCard, Bell, Eye, Lock, LogOut, ChevronRight, Edit2, Bookmark, Play, FileText, Lightbulb, ArrowLeft, Linkedin, Twitter, BarChart } from 'lucide-react';
 import { motion } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, onSnapshot, query, orderBy, doc, getDoc } from 'firebase/firestore';
+import { db, auth, handleFirestoreError, OperationType } from '../firebase';
+import { collection, onSnapshot, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Resource } from '../types';
 
 export function SettingsPage() {
@@ -226,7 +226,7 @@ export function SettingsPage() {
           </section>
         ))}
 
-        <div 
+        <div
           onClick={signOut}
           className="flex items-center justify-center p-5 group cursor-pointer"
         >
@@ -234,6 +234,34 @@ export function SettingsPage() {
             <LogOut className="w-4 h-4" />
             <p className="text-sm font-extrabold tracking-widest uppercase">Sign Out</p>
           </div>
+        </div>
+
+        {/* Dev: Reset onboarding for testing */}
+        <div
+          onClick={async () => {
+            if (!auth.currentUser) return;
+            if (!confirm('Reset onboarding? You will go through the setup flow again.')) return;
+            try {
+              await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+                onboarded: false,
+                name: auth.currentUser.displayName || 'User',
+                handle: auth.currentUser.email?.split('@')[0] || 'user',
+                role: 'Community Member',
+                company: '',
+                bio: '',
+                tags: [],
+              });
+              localStorage.clear();
+              sessionStorage.clear();
+              window.location.href = '/';
+            } catch (err) {
+              console.error('Reset failed:', err);
+              alert('Reset failed — check console');
+            }
+          }}
+          className="flex items-center justify-center p-5 mb-20 group cursor-pointer opacity-40 hover:opacity-100 transition-opacity"
+        >
+          <p className="text-[10px] font-bold tracking-widest uppercase text-on-surface-variant">Reset Onboarding (Dev)</p>
         </div>
       </div>
     </motion.main>

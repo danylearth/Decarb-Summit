@@ -7,7 +7,7 @@ import { Post, User, Comment } from '../types';
 import { Avatar, Card, Button } from '../components/UI';
 import { Heart, MessageCircle, Share2, MoreHorizontal, Plus, X, Image as ImageIcon, Video, Upload, Loader2, Send, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MOCK_POSTS, MOCK_USERS } from '../constants';
+// Mock data removed - all data comes from Firestore
 
 export function FeedPage() {
   const { user } = useUser();
@@ -29,13 +29,7 @@ export function FeedPage() {
     
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       if (snapshot.empty) {
-        // Fallback to mock data if Firestore is empty
-        const mockPostsData = MOCK_POSTS.map(post => ({
-          ...post,
-          author: post.author as User,
-          timestamp: post.timestamp
-        })) as (Post & { author: User })[];
-        setPosts(mockPostsData);
+        setPosts([]);
         return;
       }
 
@@ -303,6 +297,7 @@ export function FeedPage() {
       </header>
 
       {/* Posts */}
+      <div className="md:grid md:grid-cols-[1fr_300px] md:gap-8 md:items-start">
       <div className="space-y-8">
         {posts.map((post) => (
           <Card key={post.id} noPadding>
@@ -485,6 +480,34 @@ export function FeedPage() {
             <p className="text-on-surface-variant font-medium italic">No posts yet. Be the first to share an insight.</p>
           </div>
         )}
+      </div>
+
+      {/* Desktop sidebar widget */}
+      <aside className="hidden md:block sticky top-12 space-y-6">
+        <div className="bg-surface-container-low rounded-2xl border border-white/5 p-6">
+          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/40 mb-4">Trending Topics</h3>
+          <div className="space-y-3">
+            {['Carbon Capture', 'Green Hydrogen', 'ESG Reporting', 'Circular Economy', 'Net Zero Strategy'].map(topic => (
+              <div key={topic} className="flex items-center justify-between">
+                <span className="text-sm font-medium text-on-surface">{topic}</span>
+                <span className="text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">Trending</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-surface-container-low rounded-2xl border border-white/5 p-6">
+          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant/40 mb-4">Your Profile</h3>
+          {user && (
+            <div className="flex items-center gap-3">
+              <Avatar src={user.avatar} alt={user.name} size="sm" />
+              <div>
+                <p className="text-sm font-bold text-on-surface">{user.name}</p>
+                <p className="text-xs text-on-surface-variant">{user.role}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
       </div>
 
       {/* Create Post Modal */}

@@ -116,7 +116,7 @@ export function ResourcesPage() {
           <h2 className="text-xl font-bold tracking-tight text-white">Video Masterclasses</h2>
           <span className="text-primary-accent text-sm font-medium cursor-pointer">View all</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {videoMasterclasses.map((video) => (
             <div 
               key={video.id} 
@@ -152,7 +152,7 @@ export function ResourcesPage() {
 
       <section className="mb-12">
         <h2 className="text-xl font-bold tracking-tight mb-6 text-white">Industry Reports</h2>
-        <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {industryReports.map((report) => (
             <div 
               key={report.id} 

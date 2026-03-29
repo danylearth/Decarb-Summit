@@ -7,7 +7,9 @@ export function AppLayout() {
     <div className="min-h-screen bg-background overflow-x-hidden">
       <Sidebar />
       <main className="md:ml-64 transition-all duration-300">
-        <Outlet />
+        <div className="max-w-7xl mx-auto">
+          <Outlet />
+        </div>
       </main>
       <div className="md:hidden">
         <BottomNav />

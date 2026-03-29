@@ -19,24 +19,47 @@ const INTEREST_TAGS = [
   'ESG Reporting', 'Nature-based Solutions', 'Hydrogen'
 ];
 
-export function OnboardingPage() {
+export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
   const { user, updateUser } = useUser();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [isFinishing, setIsFinishing] = useState(false);
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    handle: user?.handle || '',
-    role: user?.role || '',
-    company: user?.company || '',
-    bio: user?.bio || '',
-    tags: user?.tags || [] as string[],
-    linkedin: user?.linkedin || '',
-    twitter: user?.twitter || '',
+  const [currentStep, setCurrentStep] = useState(() => {
+    const saved = sessionStorage.getItem('onboarding_step');
+    return saved ? parseInt(saved, 10) : 0;
   });
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [formData, setFormData] = useState(() => {
+    const saved = sessionStorage.getItem('onboarding_form');
+    if (saved) {
+      try { return JSON.parse(saved); } catch {}
+    }
+    return {
+      name: user?.name || '',
+      handle: user?.handle || '',
+      role: user?.role || '',
+      company: user?.company || '',
+      bio: user?.bio || '',
+      tags: user?.tags || [] as string[],
+      linkedin: user?.linkedin || '',
+      twitter: user?.twitter || '',
+    };
+  });
+
+  // Persist step and form data to survive remounts
+  const updateStep = (step: number) => {
+    setCurrentStep(step);
+    sessionStorage.setItem('onboarding_step', String(step));
+  };
+
+  const updateFormData = (updates: Partial<typeof formData>) => {
+    setFormData(prev => {
+      const next = { ...prev, ...updates };
+      sessionStorage.setItem('onboarding_form', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1) {
-      setCurrentStep(currentStep + 1);
+      updateStep(currentStep + 1);
     } else {
       handleFinish();
     }
@@ -44,21 +67,24 @@ export function OnboardingPage() {
 
   const handleBack = () => {
     if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
+      updateStep(currentStep - 1);
     }
   };
 
   const handleFinish = async () => {
     if (isFinishing) return;
     setIsFinishing(true);
+    const dataToSave = { ...formData, onboarded: true };
+    console.log('[Onboarding] Saving data:', JSON.stringify(dataToSave));
     try {
-      await updateUser({
-        ...formData,
-        onboarded: true,
-      });
+      await updateUser(dataToSave);
+      console.log('[Onboarding] Save complete, transitioning...');
+      sessionStorage.removeItem('onboarding_step');
+      sessionStorage.removeItem('onboarding_form');
+      onComplete?.();
     } catch (err) {
+      console.error('[Onboarding] Save FAILED:', err);
       setIsFinishing(false);
-      console.error('Error finishing onboarding:', err);
     }
   };
 
@@ -69,19 +95,20 @@ export function OnboardingPage() {
       await updateUser({
         onboarded: true,
       });
+      sessionStorage.removeItem('onboarding_step');
+      sessionStorage.removeItem('onboarding_form');
+      onComplete?.();
     } catch (err) {
-      setIsFinishing(false);
       console.error('Error skipping onboarding:', err);
+      setIsFinishing(false);
     }
   };
 
   const toggleTag = (tag: string) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags.includes(tag) 
-        ? prev.tags.filter(t => t !== tag)
-        : [...prev.tags, tag]
-    }));
+    const newTags = formData.tags.includes(tag)
+      ? formData.tags.filter((t: string) => t !== tag)
+      : [...formData.tags, tag];
+    updateFormData({ tags: newTags });
   };
 
   const step = STEPS[currentStep];
@@ -135,7 +162,7 @@ export function OnboardingPage() {
                     <input 
                       type="text"
                       value={formData.name}
-                      onChange={e => setFormData({...formData, name: e.target.value})}
+                      onChange={e => updateFormData({ name: e.target.value })}
                       className="w-full bg-surface-container-highest border-none rounded-xl p-4 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
                       placeholder="e.g. Jane Doe"
                     />
@@ -147,7 +174,7 @@ export function OnboardingPage() {
                       <input 
                         type="text"
                         value={formData.handle}
-                        onChange={e => setFormData({...formData, handle: e.target.value})}
+                        onChange={e => updateFormData({ handle: e.target.value })}
                         className="w-full bg-surface-container-highest border-none rounded-xl p-4 pl-8 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
                         placeholder="username"
                       />
@@ -163,7 +190,7 @@ export function OnboardingPage() {
                     <input 
                       type="text"
                       value={formData.role}
-                      onChange={e => setFormData({...formData, role: e.target.value})}
+                      onChange={e => updateFormData({ role: e.target.value })}
                       className="w-full bg-surface-container-highest border-none rounded-xl p-4 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
                       placeholder="e.g. Sustainability Lead"
                     />
@@ -173,7 +200,7 @@ export function OnboardingPage() {
                     <input 
                       type="text"
                       value={formData.company}
-                      onChange={e => setFormData({...formData, company: e.target.value})}
+                      onChange={e => updateFormData({ company: e.target.value })}
                       className="w-full bg-surface-container-highest border-none rounded-xl p-4 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
                       placeholder="e.g. CarbonZero Inc."
                     />
@@ -182,7 +209,7 @@ export function OnboardingPage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/60">Bio</label>
                     <textarea 
                       value={formData.bio}
-                      onChange={e => setFormData({...formData, bio: e.target.value})}
+                      onChange={e => updateFormData({ bio: e.target.value })}
                       className="w-full bg-surface-container-highest border-none rounded-xl p-4 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all h-32 resize-none"
                       placeholder="Tell the community about your mission..."
                     />
@@ -199,7 +226,7 @@ export function OnboardingPage() {
                       <input 
                         type="text"
                         value={formData.linkedin}
-                        onChange={e => setFormData({...formData, linkedin: e.target.value})}
+                        onChange={e => updateFormData({ linkedin: e.target.value })}
                         className="w-full bg-surface-container-highest border-none rounded-xl p-4 pl-12 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
                         placeholder="https://linkedin.com/in/..."
                       />
@@ -212,7 +239,7 @@ export function OnboardingPage() {
                       <input 
                         type="text"
                         value={formData.twitter}
-                        onChange={e => setFormData({...formData, twitter: e.target.value})}
+                        onChange={e => updateFormData({ twitter: e.target.value })}
                         className="w-full bg-surface-container-highest border-none rounded-xl p-4 pl-12 text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
                         placeholder="https://x.com/..."
                       />
@@ -223,7 +250,7 @@ export function OnboardingPage() {
 
               {step.id === 'interests' && (
                 <div className="space-y-6">
-                  <p className="text-on-surface-variant text-sm mb-4">Select the topics you're most interested in to personalize your feed.</p>
+                  <p className="text-on-surface-variant text-sm mb-4">Select topics or add your own to personalize your feed.</p>
                   <div className="flex flex-wrap gap-2">
                     {INTEREST_TAGS.map(tag => (
                       <button
@@ -238,6 +265,51 @@ export function OnboardingPage() {
                         {tag}
                       </button>
                     ))}
+                    {/* Custom tags added by user */}
+                    {formData.tags.filter((t: string) => !INTEREST_TAGS.includes(t)).map((tag: string) => (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTag(tag)}
+                        className="px-4 py-2 rounded-full text-xs font-bold transition-all border bg-primary-accent border-primary-accent text-on-primary-accent"
+                      >
+                        {tag} ×
+                      </button>
+                    ))}
+                  </div>
+                  {/* Custom tag input */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/60">Add Custom Skill</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. Battery Storage"
+                        className="flex-1 bg-surface-container-highest border-none rounded-xl p-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-accent outline-none transition-all"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = (e.target as HTMLInputElement).value.trim();
+                            if (val && !formData.tags.includes(val)) {
+                              updateFormData({ tags: [...formData.tags, val] });
+                              (e.target as HTMLInputElement).value = '';
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = (e.currentTarget.previousElementSibling as HTMLInputElement);
+                          const val = input.value.trim();
+                          if (val && !formData.tags.includes(val)) {
+                            updateFormData({ tags: [...formData.tags, val] });
+                            input.value = '';
+                          }
+                        }}
+                        className="px-4 py-2 bg-primary-accent text-on-primary-accent rounded-xl text-xs font-bold uppercase tracking-widest"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

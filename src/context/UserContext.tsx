@@ -58,31 +58,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         unsubProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data() as User & { membership: any, preferences: any };
+            // localStorage is the sticky source of truth for onboarded state
             const localOnboarded = localStorage.getItem(`onboarded_${firebaseUser.uid}`) === 'true';
-            
-            console.log('Snapshot data:', data);
-            console.log('Local onboarded:', localOnboarded);
-            
-            setUser(prev => {
-              // Once onboarded is true, keep it true for this session to prevent redirect loops
-              const wasOnboarded = prev?.onboarded || localOnboarded;
-              const isOnboarded = !!data.onboarded || wasOnboarded;
-              
-              console.log('Setting onboarded to:', isOnboarded);
-              
-              return {
-                id: data.id || docSnap.id,
-                name: data.name,
-                handle: data.handle,
-                role: data.role,
-                company: data.company,
-                avatar: data.avatar,
-                bio: data.bio,
-                tags: data.tags,
-                linkedin: data.linkedin,
-                twitter: data.twitter,
-                onboarded: isOnboarded,
-              };
+            const isOnboarded = !!data.onboarded || localOnboarded;
+
+            // Once onboarded, persist it so it can never flip back
+            if (isOnboarded && !localOnboarded) {
+              localStorage.setItem(`onboarded_${firebaseUser.uid}`, 'true');
+            }
+
+            setUser({
+              id: data.id || docSnap.id,
+              name: data.name ?? '',
+              handle: data.handle ?? '',
+              role: data.role ?? '',
+              company: data.company ?? '',
+              avatar: data.avatar ?? '',
+              bio: data.bio ?? '',
+              tags: data.tags ?? [],
+              linkedin: data.linkedin ?? '',
+              twitter: data.twitter ?? '',
+              onboarded: isOnboarded,
             });
             
             if (data.membership) setMembership(data.membership);
@@ -149,7 +145,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const updateUser = async (updates: Partial<User>) => {
     if (!auth.currentUser || !user) return;
     const userRef = doc(db, 'users', auth.currentUser.uid);
-    
+
     // Optimistic update to prevent redirect loops during onboarding
     const prevUser = { ...user };
     setUser({ ...user, ...updates });
@@ -159,15 +155,34 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(`onboarded_${auth.currentUser.uid}`, 'true');
     }
 
+    // Clean updates for Firestore rules compliance
+    const cleanedUpdates: Record<string, any> = { ...updates };
+    ['linkedin', 'twitter', 'avatar'].forEach(field => {
+      if (field in cleanedUpdates) {
+        const val = cleanedUpdates[field];
+        if (!val || val === '') {
+          // Remove empty strings — rules require valid URLs
+          delete cleanedUpdates[field];
+        } else if (typeof val === 'string' && !val.startsWith('http://') && !val.startsWith('https://')) {
+          // Auto-prefix with https:// if missing
+          cleanedUpdates[field] = `https://${val}`;
+        }
+      }
+    });
+
     try {
-      await updateDoc(userRef, updates);
-    } catch (err) {
+      console.log('[updateUser] Writing to Firestore:', JSON.stringify(cleanedUpdates));
+      await updateDoc(userRef, cleanedUpdates);
+      console.log('[updateUser] Firestore write SUCCESS');
+    } catch (err: any) {
+      console.error('[updateUser] Firestore write FAILED:', err?.code, err?.message);
       // Rollback on error
       setUser(prevUser);
       if (updates.onboarded) {
         localStorage.removeItem(`onboarded_${auth.currentUser.uid}`);
       }
       handleFirestoreError(err, OperationType.UPDATE, `users/${auth.currentUser.uid}`);
+      throw err; // Re-throw so onboarding catch block sees it
     }
   };
 

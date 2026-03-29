@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { FeedPage } from './pages/FeedPage';
 import { ResourcesPage } from './pages/ResourcesPage';
@@ -14,14 +14,136 @@ import { ChatPage } from './pages/ChatPage';
 import { PersonalInfoPage } from './pages/PersonalInfoPage';
 import { MembershipPage } from './pages/MembershipPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { OnboardingPage } from './pages/OnboardingPage';
 import { UserProvider, useUser } from './context/UserContext';
 import { ResourceDetailPage } from './pages/ResourceDetailPage';
 import { Button } from './components/UI';
-import { LogIn } from 'lucide-react';
-import { motion } from 'motion/react';
+import { LogIn, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect } from 'react';
+
+function TutorialGuide({ onComplete }: { onComplete: () => void }) {
+  const [step, setStep] = useState(0);
+  const navigate = useNavigate();
+
+  const steps = [
+    {
+      route: '/connections',
+      title: 'Match with Attendees',
+      description: 'Swipe through people at the event. See their role, expertise, and company. Tap Offer to connect.',
+      position: 'center' as const,
+    },
+    {
+      route: '/connections?tab=messages',
+      title: 'Your Conversations',
+      description: 'Switch to Conversations to see your active chats. Send messages, voice notes, and files.',
+      position: 'center' as const,
+    },
+    {
+      route: '/connections?filters=true',
+      title: 'Filter Your Matches',
+      description: 'Use filters to narrow down by role, company, or expertise. Find exactly who you need.',
+      position: 'top' as const,
+    },
+    {
+      route: '/feed',
+      title: 'Community Feed',
+      description: 'Share insights, post updates, and engage with other attendees. This is where conversations start.',
+      position: 'center' as const,
+    },
+    {
+      route: '/profile',
+      title: 'Your Profile',
+      description: "This is how others see you. Keep it sharp — your role, bio, and tags help people find you.",
+      position: 'center' as const,
+    },
+  ];
+
+  const current = steps[step];
+  const isLast = step === steps.length - 1;
+
+  useEffect(() => {
+    navigate(current.route);
+  }, [step]);
+
+  const handleNext = () => {
+    if (isLast) {
+      navigate('/connections');
+      onComplete();
+    } else {
+      setStep(step + 1);
+    }
+  };
+
+  const positionClass = current.position === 'top'
+    ? 'top-28 left-1/2 -translate-x-1/2'
+    : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2';
+
+  return (
+    <div className="fixed inset-0 z-[200] pointer-events-none">
+      {/* Subtle backdrop */}
+      <div className="absolute inset-0 bg-background/40 pointer-events-auto" onClick={handleNext} />
+
+      {/* Tooltip card */}
+      <motion.div
+        key={step}
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.3 }}
+        className={`absolute ${positionClass} w-[90%] max-w-sm pointer-events-auto`}
+      >
+        <div className="bg-surface-container-low/95 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl p-6 space-y-4">
+          {/* Progress */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex gap-1.5">
+              {steps.map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1 rounded-full transition-all ${
+                    i === step ? 'bg-primary-accent w-5' : i < step ? 'bg-primary-accent/50 w-2' : 'bg-surface-container-highest w-2'
+                  }`}
+                />
+              ))}
+            </div>
+            <span className="text-[10px] font-bold text-on-surface-variant/40 uppercase tracking-widest">
+              {step + 1}/{steps.length}
+            </span>
+          </div>
+
+          <h3 className="text-xl font-black tracking-tight text-white">{current.title}</h3>
+          <p className="text-sm text-on-surface-variant font-medium leading-relaxed">{current.description}</p>
+
+          <div className="flex items-center justify-between pt-2">
+            <button
+              onClick={onComplete}
+              className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant/40 hover:text-on-surface-variant transition-colors"
+            >
+              Skip
+            </button>
+            <Button
+              onClick={handleNext}
+              className="rounded-full px-6 py-2 flex items-center gap-2 text-xs"
+            >
+              {isLast ? "Start Connecting" : 'Next'}
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
 function AppContent() {
   const { user, loading, signIn } = useUser();
+  const [showTutorial, setShowTutorial] = useState(false);
+  // Track onboarded locally so it can NEVER flip back once set
+  const [localOnboarded, setLocalOnboarded] = useState(() => {
+    // Check all possible localStorage keys on mount
+    const keys = Object.keys(localStorage).filter(k => k.startsWith('onboarded_'));
+    return keys.some(k => localStorage.getItem(k) === 'true');
+  });
 
   if (loading) {
     return (
@@ -33,81 +155,146 @@ function AppContent() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-between p-8 text-center relative overflow-hidden">
+      <div className="min-h-screen bg-background flex flex-col md:flex-row items-stretch relative overflow-hidden">
         {/* Atmospheric Background */}
         <div className="absolute inset-0 z-0">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary-accent/10 blur-[120px] rounded-full" />
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary-accent/5 blur-[120px] rounded-full" />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center relative z-10 w-full max-w-sm">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+        {/* Desktop left branding panel */}
+        <div className="hidden md:flex flex-1 flex-col items-center justify-center relative z-10 border-r border-white/5">
+          <motion.div
+            initial={{ opacity: 0, x: -30 }}
+            animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8 }}
-            className="mb-12"
+            className="max-w-md px-12 text-center"
           >
-            <img 
-              src="https://storage.googleapis.com/static-assets-public/ais-studio/attachments/a7f8b9c0-d1e2-4f5g-6h7i-8j9k0l1m2n3o/logo.png" 
-              alt="DECARB SUMMITS" 
-              className="w-64 h-auto mx-auto"
+            <img
+              src="https://storage.googleapis.com/static-assets-public/ais-studio/attachments/a7f8b9c0-d1e2-4f5g-6h7i-8j9k0l1m2n3o/logo.png"
+              alt="DECARB SUMMITS"
+              className="w-72 h-auto mx-auto mb-8"
               referrerPolicy="no-referrer"
               onError={(e) => {
-                // Fallback if the specific attachment URL isn't available
                 e.currentTarget.style.display = 'none';
-                e.currentTarget.parentElement!.innerHTML = '<h1 class="text-5xl font-black tracking-tighter text-primary-accent">DECARB</h1>';
+                e.currentTarget.parentElement!.innerHTML = '<h1 class="text-6xl font-black tracking-tighter text-primary-accent mb-8">DECARB</h1>';
               }}
             />
+            <p className="text-on-surface-variant font-medium tracking-wide leading-relaxed text-lg">
+              The exclusive network for industrial decarbonization leaders.
+            </p>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface-variant/30 mt-12">
+              Industrial Decarbonization Network © 2026
+            </p>
           </motion.div>
+        </div>
+
+        {/* Login form */}
+        <div className="flex-1 flex flex-col items-center justify-between md:justify-center p-8 text-center relative z-10">
+          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm">
+            {/* Mobile-only logo */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+              className="mb-12 md:hidden"
+            >
+              <img
+                src="https://storage.googleapis.com/static-assets-public/ais-studio/attachments/a7f8b9c0-d1e2-4f5g-6h7i-8j9k0l1m2n3o/logo.png"
+                alt="DECARB SUMMITS"
+                className="w-64 h-auto mx-auto"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.parentElement!.innerHTML = '<h1 class="text-5xl font-black tracking-tighter text-primary-accent">DECARB</h1>';
+                }}
+              />
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4, duration: 0.8 }}
+              className="space-y-6 w-full"
+            >
+              <p className="text-on-surface-variant font-medium tracking-wide leading-relaxed md:hidden">
+                The exclusive network for industrial decarbonization leaders.
+              </p>
+              <h2 className="hidden md:block text-3xl font-black tracking-tight text-white mb-2">Welcome Back</h2>
+              <p className="hidden md:block text-on-surface-variant text-sm">Sign in to your account to continue</p>
+
+              <div className="pt-8 space-y-4">
+                <Button
+                  onClick={signIn}
+                  size="lg"
+                  className="w-full rounded-full py-6 text-sm font-black uppercase tracking-[0.2em] shadow-[0_20px_40px_-12px_rgba(198,238,98,0.3)]"
+                >
+                  Log In
+                </Button>
+                <Button
+                  onClick={signIn}
+                  variant="outline"
+                  size="lg"
+                  className="w-full rounded-full py-6 text-sm font-black uppercase tracking-[0.2em] border-white/10 hover:bg-white/5 text-on-surface"
+                >
+                  Register
+                </Button>
+              </div>
+            </motion.div>
+          </div>
 
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.8 }}
-            className="space-y-6 w-full"
+            transition={{ delay: 1 }}
+            className="relative z-10 pt-8 md:hidden"
           >
-            <p className="text-on-surface-variant font-medium tracking-wide leading-relaxed">
-              The exclusive network for industrial decarbonization leaders.
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface-variant/30">
+              Industrial Decarbonization Network © 2026
             </p>
-
-            <div className="pt-8 space-y-4">
-              <Button 
-                onClick={signIn} 
-                size="lg" 
-                className="w-full rounded-full py-6 text-sm font-black uppercase tracking-[0.2em] shadow-[0_20px_40px_-12px_rgba(198,238,98,0.3)]"
-              >
-                Log In
-              </Button>
-              <Button 
-                onClick={signIn} 
-                variant="outline"
-                size="lg" 
-                className="w-full rounded-full py-6 text-sm font-black uppercase tracking-[0.2em] border-white/10 hover:bg-white/5 text-on-surface"
-              >
-                Register
-              </Button>
-            </div>
           </motion.div>
         </div>
-
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="relative z-10 pt-8"
-        >
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface-variant/30">
-            Industrial Decarbonization Network © 2026
-          </p>
-        </motion.div>
       </div>
     );
   }
 
+  // Once onboarded, lock it in React state so it can NEVER flip back
+  const isOnboarded = localOnboarded || user.onboarded || localStorage.getItem(`onboarded_${user.id}`) === 'true';
+
+  // Sync: if we detect onboarded from any source, lock it
+  if (isOnboarded && !localOnboarded) {
+    setLocalOnboarded(true);
+  }
+
+  if (!isOnboarded) {
+    return (
+      <Routes>
+        <Route path="/onboarding" element={
+          <OnboardingPage onComplete={() => {
+            localStorage.setItem(`onboarded_${user.id}`, 'true');
+            setLocalOnboarded(true);
+            setShowTutorial(true);
+          }} />
+        } />
+        <Route path="*" element={<Navigate to="/onboarding" replace />} />
+      </Routes>
+    );
+  }
+
+  // Show tutorial after onboarding completes
+  const needsTutorial = showTutorial || !localStorage.getItem(`tutorial_done_${user.id}`);
+
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route path="/" element={<Navigate to="/feed" replace />} />
+    <>
+      {needsTutorial && (
+        <TutorialGuide onComplete={() => {
+          localStorage.setItem(`tutorial_done_${user.id}`, 'true');
+          setShowTutorial(false);
+        }} />
+      )}
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Navigate to="/connections" replace />} />
         <Route path="/feed" element={<FeedPage />} />
         <Route path="/resources" element={<ResourcesPage />} />
         <Route path="/resources/:id" element={<ResourceDetailPage />} />
@@ -118,10 +305,11 @@ function AppContent() {
         <Route path="/profile/personal" element={<PersonalInfoPage />} />
         <Route path="/profile/membership" element={<MembershipPage />} />
         <Route path="/admin" element={<AdminDashboardPage />} />
-        <Route path="*" element={<Navigate to="/feed" replace />} />
+        <Route path="*" element={<Navigate to="/connections" replace />} />
       </Route>
       <Route path="/chat/:userId" element={<ChatPage />} />
     </Routes>
+    </>
   );
 }
 
