@@ -3,7 +3,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, onSnapshot, limit, where, orderBy, doc, getDoc } from 'firebase/firestore';
 // Real data from Firestore - no mock fallbacks
 import { Avatar, Button, cn } from '../components/UI';
-import { X, Star, Sparkles, ChevronRight, SlidersHorizontal, Search, Filter, Loader2 } from 'lucide-react';
+import { X, Star, Sparkles, ChevronRight, SlidersHorizontal, Search, Filter, Loader2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { User } from '../types';
@@ -36,6 +36,7 @@ export function ConnectionsPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [messageSearch, setMessageSearch] = useState('');
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
   const [filters, setFilters] = useState({
@@ -78,8 +79,9 @@ export function ConnectionsPage() {
       setCurrentIndex(0);
       setLoading(false);
     }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'users');
+      setError('Failed to load connections. Please try again.');
       setLoading(false);
+      handleFirestoreError(err, OperationType.LIST, 'users');
     });
 
     return () => unsubscribe();
@@ -277,6 +279,13 @@ export function ConnectionsPage() {
               <div className="flex flex-col items-center gap-4 pt-20">
                 <div className="w-8 h-8 animate-spin text-primary-accent"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" strokeDasharray="60 40"/></svg></div>
               </div>
+            ) : error ? (
+              <div className="flex flex-col items-center text-center pt-20 space-y-4">
+                <div className="w-14 h-14 rounded-full bg-red-400/10 flex items-center justify-center">
+                  <AlertTriangle className="w-7 h-7 text-red-400" />
+                </div>
+                <p className="text-sm text-red-400 font-medium">{error}</p>
+              </div>
             ) : activeUser ? (
               <motion.div
                 key={activeUser.id}
@@ -371,6 +380,13 @@ export function ConnectionsPage() {
                 <div className="flex flex-col items-center gap-4">
                   <Loader2 className="w-8 h-8 animate-spin text-primary-accent" />
                   <p className="text-on-surface-variant text-xs font-bold uppercase tracking-widest">Finding Catalysts...</p>
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="w-14 h-14 rounded-full bg-red-400/10 flex items-center justify-center">
+                    <AlertTriangle className="w-7 h-7 text-red-400" />
+                  </div>
+                  <p className="text-sm text-red-400 font-medium">{error}</p>
                 </div>
               ) : activeUser ? (
                 <>

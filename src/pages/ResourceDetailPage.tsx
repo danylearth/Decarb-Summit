@@ -4,7 +4,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc, collection, query, limit, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Resource } from '../types';
 import { Button, Card, cn } from '../components/UI';
-import { ArrowLeft, Play, Share2, Clock, Calendar, User, Bookmark, ChevronRight, Check } from 'lucide-react';
+import { ArrowLeft, Play, Share2, Clock, Calendar, User, Bookmark, ChevronRight, Check, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useUser } from '../context/UserContext';
 
@@ -15,6 +15,7 @@ export function ResourceDetailPage() {
   const [resource, setResource] = useState<Resource | null>(null);
   const [related, setRelated] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
 
@@ -32,10 +33,12 @@ export function ResourceDetailPage() {
           setResource({ id: docSnap.id, ...docSnap.data() } as Resource);
         }
       } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `resources/${id}`);
-      } finally {
+        setError('Failed to load resource. Please try again.');
         setLoading(false);
+        handleFirestoreError(err, OperationType.GET, `resources/${id}`);
+        return;
       }
+      setLoading(false);
     };
 
     fetchResource();
@@ -44,6 +47,8 @@ export function ResourceDetailPage() {
     const savedRef = doc(db, 'users', user.id, 'saved_resources', id);
     const unsubSaved = onSnapshot(savedRef, (doc) => {
       setIsSaved(doc.exists());
+    }, () => {
+      // Non-critical: silently fail save status check
     });
 
     // Fetch related
@@ -53,6 +58,8 @@ export function ResourceDetailPage() {
         .map(d => ({ id: d.id, ...d.data() } as Resource))
         .filter(r => r.id !== id);
       setRelated(data);
+    }, () => {
+      // Non-critical: silently fail related resources
     });
 
     return () => {
@@ -103,6 +110,18 @@ export function ResourceDetailPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-primary-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-red-400/10 flex items-center justify-center">
+          <AlertTriangle className="w-8 h-8 text-red-400" />
+        </div>
+        <p className="text-sm text-red-400 font-medium">{error}</p>
+        <Button onClick={() => navigate('/resources')}>Back to Resources</Button>
       </div>
     );
   }

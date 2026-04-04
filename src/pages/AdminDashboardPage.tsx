@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../components/UI';
 import { motion } from 'motion/react';
-import { ArrowLeft, Users, FileText, BookOpen, BarChart } from 'lucide-react';
+import { ArrowLeft, Users, FileText, BookOpen, BarChart, AlertTriangle } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc } from 'firebase/firestore';
 
@@ -11,6 +11,8 @@ export function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState('users');
   const [data, setData] = useState<any>({ users: [], posts: [], resources: [] });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -25,7 +27,10 @@ export function AdminDashboardPage() {
           resources: resourcesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
         });
       } catch (err) {
+        setError('Failed to load dashboard data.');
+        setLoading(false);
         handleFirestoreError(err, OperationType.LIST, 'admin_dashboard');
+        return;
       } finally {
         setLoading(false);
       }
@@ -42,6 +47,7 @@ export function AdminDashboardPage() {
         [collectionName]: prev[collectionName].filter((item: any) => item.id !== id)
       }));
     } catch (err) {
+      setActionError('Failed to delete item. Please try again.');
       handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${id}`);
     }
   };
@@ -71,6 +77,7 @@ export function AdminDashboardPage() {
       setIsAdding(false);
       setFormData({ name: '', email: '', role: '' });
     } catch (err) {
+      setActionError('Failed to save user. Please try again.');
       handleFirestoreError(err, OperationType.WRITE, 'users');
     }
   };
@@ -119,8 +126,22 @@ export function AdminDashboardPage() {
         <div className="flex justify-center py-20">
           <div className="w-12 h-12 border-4 border-primary-accent border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <div className="flex flex-col items-center text-center py-20 space-y-4">
+          <div className="w-16 h-16 rounded-full bg-red-400/10 flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8 text-red-400" />
+          </div>
+          <p className="text-sm text-red-400 font-medium">{error}</p>
+        </div>
       ) : (
         <Card className="min-h-[400px]">
+          {actionError && (
+            <div className="mb-4 p-3 bg-red-400/10 border border-red-400/20 rounded-lg flex items-center gap-3">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <p className="text-sm text-red-400 font-medium flex-1">{actionError}</p>
+              <button onClick={() => setActionError(null)} className="text-red-400 hover:text-red-300 text-xs font-bold uppercase tracking-widest">Dismiss</button>
+            </div>
+          )}
           {activeTab === 'users' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
@@ -140,7 +161,9 @@ export function AdminDashboardPage() {
                 </div>
               )}
 
-              {data.users.map((user: any) => (
+              {data.users.length === 0 ? (
+                <p className="text-center text-on-surface-variant text-sm py-8">No users found.</p>
+              ) : data.users.map((user: any) => (
                 <div key={user.id} className="flex justify-between items-center p-4 bg-surface-container-highest rounded-lg">
                   <div>
                     <p className="font-bold">{user.name}</p>
@@ -157,7 +180,9 @@ export function AdminDashboardPage() {
           {activeTab === 'posts' && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold mb-4">Posts ({data.posts.length})</h2>
-              {data.posts.map((post: any) => (
+              {data.posts.length === 0 ? (
+                <p className="text-center text-on-surface-variant text-sm py-8">No posts found.</p>
+              ) : data.posts.map((post: any) => (
                 <div key={post.id} className="flex justify-between items-center p-4 bg-surface-container-highest rounded-lg">
                   <p className="text-sm truncate max-w-xs">{post.content}</p>
                   <Button variant="danger" size="sm" onClick={() => handleDelete('posts', post.id)}>Delete</Button>
@@ -168,7 +193,9 @@ export function AdminDashboardPage() {
           {activeTab === 'resources' && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold mb-4">Resources ({data.resources.length})</h2>
-              {data.resources.map((res: any) => (
+              {data.resources.length === 0 ? (
+                <p className="text-center text-on-surface-variant text-sm py-8">No resources found.</p>
+              ) : data.resources.map((res: any) => (
                 <div key={res.id} className="flex justify-between items-center p-4 bg-surface-container-highest rounded-lg">
                   <p className="font-bold">{res.title}</p>
                   <Button variant="danger" size="sm" onClick={() => handleDelete('resources', res.id)}>Delete</Button>

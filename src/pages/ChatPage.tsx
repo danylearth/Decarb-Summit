@@ -2,7 +2,7 @@ import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 // Real user data fetched from Firestore
 import { Avatar, Button } from '../components/UI';
-import { ArrowLeft, Info, Plus, Mic, Send, FileText, X, Paperclip, Play, Pause, Square } from 'lucide-react';
+import { ArrowLeft, Info, Plus, Mic, Send, FileText, X, Paperclip, Play, Pause, Square, Loader2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, limit, doc, getDoc } from 'firebase/firestore';
@@ -41,6 +41,8 @@ export function ChatPage() {
   const [chatPartner, setChatPartner] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Fetch real user data from Firestore
   useEffect(() => {
@@ -91,7 +93,10 @@ export function ChatPage() {
       
       setMessages(allMessages);
       setIsLoading(false);
+      setMessagesError(null);
     }, (error) => {
+      setMessagesError('Failed to load messages.');
+      setIsLoading(false);
       handleFirestoreError(error, OperationType.LIST, 'messages');
     });
 
@@ -291,6 +296,8 @@ export function ChatPage() {
       setInputValue('');
       setSelectedFiles([]);
     } catch (error) {
+      setSendError('Failed to send message. Please try again.');
+      setTimeout(() => setSendError(null), 4000);
       handleFirestoreError(error, OperationType.CREATE, 'messages');
     }
   };
@@ -374,7 +381,16 @@ export function ChatPage() {
       {/* Messages */}
       <main className="flex-grow pt-48 pb-40 px-6 overflow-y-auto space-y-8 hide-scrollbar md:max-w-2xl md:mx-auto md:border-x md:border-white/5">
         <AnimatePresence initial={false}>
-          {messages.length === 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary-accent" />
+            </div>
+          ) : messagesError ? (
+            <div className="flex flex-col items-center text-center py-16 space-y-3">
+              <AlertTriangle className="w-8 h-8 text-red-400" />
+              <p className="text-sm text-red-400 font-medium">{messagesError}</p>
+            </div>
+          ) : messages.length === 0 ? (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -502,6 +518,20 @@ export function ChatPage() {
       {/* Input Area */}
       <footer className="fixed bottom-0 left-0 w-full md:max-w-2xl md:left-1/2 md:-translate-x-1/2 px-6 pb-8 pt-4 bg-gradient-to-t from-background via-background/95 to-transparent z-50">
         <div className="max-w-4xl mx-auto space-y-4">
+          {/* Send Error */}
+          <AnimatePresence>
+            {sendError && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-400/10 border border-red-400/20 rounded-xl"
+              >
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <p className="text-xs text-red-400 font-medium">{sendError}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* File Previews */}
           <AnimatePresence>
             {selectedFiles.length > 0 && (

@@ -5,13 +5,15 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useUser } from '../context/UserContext';
 import { Post, User, Comment } from '../types';
 import { Avatar, Card, Button } from '../components/UI';
-import { Heart, MessageCircle, Share2, MoreHorizontal, Plus, X, Image as ImageIcon, Video, Upload, Loader2, Send, Pencil, Trash2 } from 'lucide-react';
+import { Heart, MessageCircle, Share2, MoreHorizontal, Plus, X, Image as ImageIcon, Video, Upload, Loader2, Send, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // Mock data removed - all data comes from Firestore
 
 export function FeedPage() {
   const { user } = useUser();
   const [posts, setPosts] = useState<(Post & { author: User })[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(true);
+  const [postsError, setPostsError] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,10 +28,11 @@ export function FeedPage() {
 
   useEffect(() => {
     const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'));
-    
+
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       if (snapshot.empty) {
         setPosts([]);
+        setLoadingPosts(false);
         return;
       }
 
@@ -55,7 +58,11 @@ export function FeedPage() {
         } as Post & { author: User };
       }));
       setPosts(postsData);
+      setLoadingPosts(false);
+      setPostsError(null);
     }, (err) => {
+      setPostsError('Failed to load posts. Please try again.');
+      setLoadingPosts(false);
       handleFirestoreError(err, OperationType.LIST, 'posts');
     });
 
@@ -299,7 +306,22 @@ export function FeedPage() {
       {/* Posts */}
       <div className="md:grid md:grid-cols-[1fr_300px] md:gap-8 md:items-start">
       <div className="space-y-8">
-        {posts.map((post) => (
+        {loadingPosts && (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-primary-accent" />
+          </div>
+        )}
+
+        {postsError && !loadingPosts && (
+          <div className="flex flex-col items-center text-center py-16 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-red-400/10 flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+            </div>
+            <p className="text-sm text-red-400 font-medium">{postsError}</p>
+          </div>
+        )}
+
+        {!loadingPosts && !postsError && posts.map((post) => (
           <Card key={post.id} noPadding>
             <div className="p-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -475,7 +497,7 @@ export function FeedPage() {
           </Card>
         ))}
 
-        {posts.length === 0 && (
+        {!loadingPosts && !postsError && posts.length === 0 && (
           <div className="text-center py-20">
             <p className="text-on-surface-variant font-medium italic">No posts yet. Be the first to share an insight.</p>
           </div>

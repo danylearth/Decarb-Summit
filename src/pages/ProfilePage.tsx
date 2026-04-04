@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { Avatar, Button } from '../components/UI';
-import { ArrowLeft, Settings, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter, Loader2 } from 'lucide-react';
+import { ArrowLeft, Settings, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter, Loader2, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -15,6 +15,7 @@ export function ProfilePage() {
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const targetUserId = userId || currentUser?.id;
   const isOwnProfile = targetUserId === currentUser?.id;
@@ -31,8 +32,10 @@ export function ProfilePage() {
           setNotFound(true);
         }
       } catch (err) {
+        setProfileError('Failed to load profile. Please try again.');
+        setProfileLoading(false);
         handleFirestoreError(err, OperationType.GET, `users/${targetUserId}`);
-        setNotFound(true);
+        return;
       } finally {
         setProfileLoading(false);
       }
@@ -46,6 +49,18 @@ export function ProfilePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary-accent" />
+      </div>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <div className="w-16 h-16 rounded-full bg-red-400/10 flex items-center justify-center">
+          <AlertTriangle className="w-8 h-8 text-red-400" />
+        </div>
+        <p className="text-sm text-red-400 font-medium">{profileError}</p>
+        <Button onClick={() => navigate(-1)} variant="outline" className="rounded-full">Go Back</Button>
       </div>
     );
   }

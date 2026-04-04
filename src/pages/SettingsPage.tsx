@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { Avatar, Card, cn } from '../components/UI';
-import { User, CreditCard, Bell, Eye, Lock, LogOut, ChevronRight, Edit2, Bookmark, Play, FileText, Lightbulb, ArrowLeft, Linkedin, Twitter, BarChart } from 'lucide-react';
+import { User, CreditCard, Bell, Eye, Lock, LogOut, ChevronRight, Edit2, Bookmark, Play, FileText, Lightbulb, ArrowLeft, Linkedin, Twitter, BarChart, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -13,6 +13,7 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const [savedResources, setSavedResources] = useState<Resource[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(true);
+  const [savedError, setSavedError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -34,14 +35,28 @@ export function SettingsPage() {
         );
         setSavedResources(resources.filter((r): r is Resource => r !== null));
       } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `users/${user.id}/saved_resources`);
-      } finally {
+        setSavedError('Failed to load saved insights.');
         setLoadingSaved(false);
+        handleFirestoreError(err, OperationType.GET, `users/${user.id}/saved_resources`);
+        return;
       }
+      setLoadingSaved(false);
+    }, (err) => {
+      setSavedError('Failed to load saved insights.');
+      setLoadingSaved(false);
+      handleFirestoreError(err, OperationType.LIST, `users/${user.id}/saved_resources`);
     });
 
     return () => unsub();
   }, [user]);
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-primary-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   const accountItems = [
     { icon: User, label: 'Personal Information', sub: 'Bio, contact data, and social links', path: '/profile/personal' },
@@ -144,6 +159,11 @@ export function SettingsPage() {
           {loadingSaved ? (
             <div className="flex justify-center py-8">
               <div className="w-6 h-6 border-2 border-primary-accent border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : savedError ? (
+            <div className="bg-surface-container-low rounded-xl p-8 border border-red-400/20 text-center">
+              <AlertTriangle className="w-8 h-8 text-red-400/40 mx-auto mb-3" />
+              <p className="text-sm font-medium text-red-400">{savedError}</p>
             </div>
           ) : savedResources.length > 0 ? (
             <div className="grid grid-cols-1 gap-3">
