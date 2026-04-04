@@ -74,7 +74,7 @@
 ### 2C: Storage Buckets
 
 - [x] **P2.16** Migration: Create storage buckets — `avatars` (public, image/*, 1MB), `post-media` (public, image/video, 10MB), `voice-notes` (private, audio/*, 5MB), `resources` (private) per specs/supabase-storage.md
-- [ ] **P2.17** Migration: Storage RLS policies — users upload to own folder, public read on avatars/post-media per specs/supabase-storage.md
+- [x] **P2.17** Migration: Storage RLS policies — users upload to own folder, public read on avatars/post-media per specs/supabase-storage.md
 
 ### 2D: Auth
 
