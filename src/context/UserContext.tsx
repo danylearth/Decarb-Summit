@@ -11,6 +11,7 @@ interface UserContextType {
   loading: boolean;
   signIn: () => Promise<void>;
   signInWithLinkedIn: () => Promise<void>;
+  signInWithMagicLink: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   membership: {
@@ -283,6 +284,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithMagicLink = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+      if (error) {
+        console.error('Magic link sign in error:', error.message);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Magic link sign in error:', error);
+      throw error;
+    }
+  };
+
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -400,6 +419,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       loading,
       signIn,
       signInWithLinkedIn,
+      signInWithMagicLink,
       signOut,
       updateUser,
       membership,
