@@ -270,9 +270,11 @@ function AppContent() {
   const isOnboarded = localOnboarded || user.onboarded || localStorage.getItem(`onboarded_${user.id}`) === 'true';
 
   // Sync: if we detect onboarded from any source, lock it
-  if (isOnboarded && !localOnboarded) {
-    setLocalOnboarded(true);
-  }
+  useEffect(() => {
+    if (isOnboarded && !localOnboarded) {
+      setLocalOnboarded(true);
+    }
+  }, [isOnboarded, localOnboarded]);
 
   if (!isOnboarded) {
     return (
