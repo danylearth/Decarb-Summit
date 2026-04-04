@@ -75,10 +75,8 @@ export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
     if (isFinishing) return;
     setIsFinishing(true);
     const dataToSave = { ...formData, onboarded: true };
-    console.log('[Onboarding] Saving data:', JSON.stringify(dataToSave));
     try {
       await updateUser(dataToSave);
-      console.log('[Onboarding] Save complete, transitioning...');
       sessionStorage.removeItem('onboarding_step');
       sessionStorage.removeItem('onboarding_form');
       onComplete?.();

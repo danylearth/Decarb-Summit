@@ -13,12 +13,12 @@
 ### High Priority
 
 - [x] **P1.1** ~~Fix route shadowing in App.tsx~~ — Verified: static routes (`/profile/settings`, `/profile/personal`, `/profile/membership`) already precede `/profile/:userId`. React Router v7 ranking algorithm ensures static segments beat dynamic params regardless of order. No change needed.
-- [ ] **P1.2** Add admin role guard to `/admin` route and Admin Dashboard link in SettingsPage — currently any authenticated user can access both. Use `user.role` check per specs/react-router-v7.md (AdminLayout pattern)
-- [ ] **P1.3** Fix `@` path alias mismatch — `tsconfig.json` maps `@/*` to `./` (project root) but `vite.config.ts` maps `@` to `./src`. Align both to `./src` per AGENTS.md
-- [ ] **P1.4** Fix PersonalInfoPage hardcoded email `'alex.sterling@decarb.global'` — populate from `auth.currentUser.email` or user document
-- [ ] **P1.5** Fix PersonalInfoPage `handleSave` — add `await` on `updateUser()` call before navigating away
-- [ ] **P1.6** Remove console.log statements from OnboardingPage (lines ~78-81) and UserContext.tsx (lines ~174, 176)
-- [ ] **P1.7** Hide dev "Reset Onboarding" button in production in SettingsPage — gate behind `import.meta.env.DEV`
+- [x] **P1.2** Add admin role guard to `/admin` route and Admin Dashboard link in SettingsPage — `AdminLayout` wrapper checks `user.isAdmin`, non-admins redirected to `/`. Settings link conditionally rendered.
+- [x] **P1.3** Fix `@` path alias mismatch — aligned `tsconfig.json` paths from `./*` (project root) to `./src/*` to match `vite.config.ts` alias. No source files used the alias yet, so no import changes needed.
+- [x] **P1.4** Fix PersonalInfoPage hardcoded email `'alex.sterling@decarb.global'` — now reads from `auth.currentUser.email` via Firebase auth import
+- [x] **P1.5** Fix PersonalInfoPage `handleSave` — added `async`/`await` on `updateUser()` so Firestore write completes before navigating to `/profile`
+- [x] **P1.6** Remove console.log statements from OnboardingPage (lines ~78, 81) and UserContext.tsx (lines ~175, 177) — removed debug logging from `handleFinish` and `updateUser`
+- [x] **P1.7** Hide dev "Reset Onboarding" button in production in SettingsPage — gated behind `import.meta.env.DEV`, added `vite/client` types to `tsconfig.json`
 - [ ] **P1.8** Fix ResourceDetailPage hardcoded article body — render actual `resource.description` from Firestore instead of static content
 - [ ] **P1.9** Fix state update during render in App.tsx — `setLocalOnboarded(true)` is called inline during render. Move to a `useEffect`
 

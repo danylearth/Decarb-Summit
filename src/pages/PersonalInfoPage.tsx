@@ -35,8 +35,8 @@ export function PersonalInfoPage() {
     );
   }
 
-  const handleSave = () => {
-    updateUser({
+  const handleSave = async () => {
+    await updateUser({
       name: formData.name,
       role: formData.role,
       company: formData.company,

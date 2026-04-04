@@ -172,9 +172,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
 
     try {
-      console.log('[updateUser] Writing to Firestore:', JSON.stringify(cleanedUpdates));
       await updateDoc(userRef, cleanedUpdates);
-      console.log('[updateUser] Firestore write SUCCESS');
     } catch (err: any) {
       console.error('[updateUser] Firestore write FAILED:', err?.code, err?.message);
       // Rollback on error

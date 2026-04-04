@@ -239,7 +239,7 @@ export function SettingsPage() {
         </div>
 
         {/* Dev: Reset onboarding for testing */}
-        <div
+        {import.meta.env.DEV && <div
           onClick={async () => {
             if (!auth.currentUser) return;
             if (!confirm('Reset onboarding? You will go through the setup flow again.')) return;
@@ -264,7 +264,7 @@ export function SettingsPage() {
           className="flex items-center justify-center p-5 mb-20 group cursor-pointer opacity-40 hover:opacity-100 transition-opacity"
         >
           <p className="text-[10px] font-bold tracking-widest uppercase text-on-surface-variant">Reset Onboarding (Dev)</p>
-        </div>
+        </div>}
       </div>
     </motion.main>
   );
