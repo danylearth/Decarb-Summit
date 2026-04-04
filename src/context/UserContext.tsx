@@ -79,6 +79,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
               linkedin: data.linkedin ?? '',
               twitter: data.twitter ?? '',
               onboarded: isOnboarded,
+              isAdmin: !!data.isAdmin,
             });
             
             if (data.membership) setMembership(data.membership);

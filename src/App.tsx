@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, Outlet } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { FeedPage } from './pages/FeedPage';
 import { ResourcesPage } from './pages/ResourcesPage';
@@ -21,6 +21,14 @@ import { Button } from './components/UI';
 import { LogIn, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
+
+function AdminLayout() {
+  const { user } = useUser();
+
+  if (!user?.isAdmin) return <Navigate to="/" replace />;
+
+  return <Outlet />;
+}
 
 function TutorialGuide({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
@@ -300,11 +308,13 @@ function AppContent() {
         <Route path="/resources/:id" element={<ResourceDetailPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/profile/:userId" element={<ProfilePage />} />
         <Route path="/profile/settings" element={<SettingsPage />} />
         <Route path="/profile/personal" element={<PersonalInfoPage />} />
         <Route path="/profile/membership" element={<MembershipPage />} />
-        <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="/profile/:userId" element={<ProfilePage />} />
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={<AdminDashboardPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/connections" replace />} />
       </Route>
       <Route path="/chat/:userId" element={<ChatPage />} />

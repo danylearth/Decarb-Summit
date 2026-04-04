@@ -43,14 +43,16 @@ export function SettingsPage() {
     return () => unsub();
   }, [user]);
 
+  const accountItems = [
+    { icon: User, label: 'Personal Information', sub: 'Bio, contact data, and social links', path: '/profile/personal' },
+    { icon: CreditCard, label: 'Membership Plan', sub: `Current: ${membership.plan}`, path: '/profile/membership' },
+    ...(user.isAdmin ? [{ icon: BarChart, label: 'Admin Dashboard', sub: 'Manage platform backend', path: '/admin' }] : []),
+  ];
+
   const sections = [
     {
       title: 'Account Settings',
-      items: [
-        { icon: User, label: 'Personal Information', sub: 'Bio, contact data, and social links', path: '/profile/personal' },
-        { icon: CreditCard, label: 'Membership Plan', sub: `Current: ${membership.plan}`, path: '/profile/membership' },
-        { icon: BarChart, label: 'Admin Dashboard', sub: 'Manage platform backend', path: '/admin' },
-      ]
+      items: accountItems
     },
     {
       title: 'Social Presence',

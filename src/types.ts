@@ -12,6 +12,7 @@ export interface User {
   linkedin?: string;
   twitter?: string;
   onboarded?: boolean;
+  isAdmin?: boolean;
 }
 
 export interface Post {
