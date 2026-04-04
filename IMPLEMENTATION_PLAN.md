@@ -39,8 +39,8 @@
 ### 2A: Foundation
 
 - [x] **P2.1** Initialize Supabase project — `npx supabase init`, configure `config.toml` per specs/supabase-schema-migrations.md
-- [ ] **P2.2** Create `src/lib/supabase.ts` — Supabase client initialization with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` per specs/supabase-client.md. Use PKCE flow, auto-refresh tokens
-- [ ] **P2.3** Generate database types — `npx supabase gen types typescript` → `src/lib/database.types.ts` per specs/supabase-client.md
+- [x] **P2.2** Create `src/lib/supabase.ts` — Supabase client initialization with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` per specs/supabase-client.md. Use PKCE flow, auto-refresh tokens
+- [x] **P2.3** Generate database types — `npx supabase gen types typescript` → `src/lib/database.types.ts` per specs/supabase-client.md
 - [ ] **P2.4** Add env vars to `.env.local` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Add to Vercel via `vercel env` (use `vercel-plugin:env` skill)
 
 ### 2B: Database Schema (migrations)
