@@ -20,7 +20,7 @@ import { UserProvider, useUser } from './context/UserContext';
 import { ResourceDetailPage } from './pages/ResourceDetailPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/UI';
-import { ArrowRight, Linkedin } from 'lucide-react';
+import { ArrowRight, Linkedin, Mail, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 
@@ -146,7 +146,26 @@ function TutorialGuide({ onComplete }: { onComplete: () => void }) {
 }
 
 function AppContent() {
-  const { user, loading, signIn, signInWithLinkedIn } = useUser();
+  const { user, loading, signIn, signInWithLinkedIn, signInWithMagicLink } = useUser();
+  const [magicLinkEmail, setMagicLinkEmail] = useState('');
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false);
+  const [magicLinkError, setMagicLinkError] = useState('');
+
+  const handleMagicLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!magicLinkEmail.trim()) return;
+    setMagicLinkLoading(true);
+    setMagicLinkError('');
+    try {
+      await signInWithMagicLink(magicLinkEmail.trim());
+      setMagicLinkSent(true);
+    } catch (err) {
+      setMagicLinkError(err instanceof Error ? err.message : 'Failed to send magic link');
+    } finally {
+      setMagicLinkLoading(false);
+    }
+  };
   const location = useLocation();
   const [showTutorial, setShowTutorial] = useState(false);
   // Track onboarded locally so it can NEVER flip back once set
@@ -257,6 +276,56 @@ function AppContent() {
                   <Linkedin className="w-5 h-5 mr-2" />
                   Continue with LinkedIn
                 </Button>
+
+                <div className="flex items-center gap-4 pt-2">
+                  <div className="flex-1 h-px bg-white/10" />
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface-variant/50">or</span>
+                  <div className="flex-1 h-px bg-white/10" />
+                </div>
+
+                {magicLinkSent ? (
+                  <div className="rounded-2xl border border-primary-accent/20 bg-primary-accent/5 p-6 text-center space-y-2">
+                    <Mail className="w-8 h-8 text-primary-accent mx-auto" />
+                    <p className="text-on-surface font-bold text-sm">Check your email</p>
+                    <p className="text-on-surface-variant text-xs leading-relaxed">
+                      We sent a sign-in link to <span className="text-on-surface font-medium">{magicLinkEmail}</span>
+                    </p>
+                    <button
+                      onClick={() => { setMagicLinkSent(false); setMagicLinkEmail(''); }}
+                      className="text-primary-accent text-xs font-bold uppercase tracking-[0.15em] hover:underline mt-2"
+                    >
+                      Use a different email
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleMagicLink} className="space-y-3">
+                    <input
+                      type="email"
+                      placeholder="Enter your email"
+                      value={magicLinkEmail}
+                      onChange={(e) => setMagicLinkEmail(e.target.value)}
+                      required
+                      className="w-full rounded-full border border-white/10 bg-surface-container px-6 py-4 text-sm text-on-surface placeholder:text-on-surface-variant/50 outline-none focus:border-primary-accent/50 focus:ring-1 focus:ring-primary-accent/25 transition-colors"
+                    />
+                    {magicLinkError && (
+                      <p className="text-red-400 text-xs text-center">{magicLinkError}</p>
+                    )}
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="lg"
+                      disabled={magicLinkLoading}
+                      className="w-full rounded-full py-6 text-sm font-black uppercase tracking-[0.2em] border-white/10 hover:bg-white/5 text-on-surface"
+                    >
+                      {magicLinkLoading ? (
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      ) : (
+                        <Mail className="w-5 h-5 mr-2" />
+                      )}
+                      {magicLinkLoading ? 'Sending...' : 'Sign in with Email'}
+                    </Button>
+                  </form>
+                )}
               </div>
             </motion.div>
           </div>
