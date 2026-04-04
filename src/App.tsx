@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { FeedPage } from './pages/FeedPage';
 import { ResourcesPage } from './pages/ResourcesPage';
@@ -15,6 +15,7 @@ import { PersonalInfoPage } from './pages/PersonalInfoPage';
 import { MembershipPage } from './pages/MembershipPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { UserProvider, useUser } from './context/UserContext';
 import { ResourceDetailPage } from './pages/ResourceDetailPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -146,6 +147,7 @@ function TutorialGuide({ onComplete }: { onComplete: () => void }) {
 
 function AppContent() {
   const { user, loading, signIn, signInWithLinkedIn } = useUser();
+  const location = useLocation();
   const [showTutorial, setShowTutorial] = useState(false);
   // Track onboarded locally so it can NEVER flip back once set
   const [localOnboarded, setLocalOnboarded] = useState(() => {
@@ -153,6 +155,11 @@ function AppContent() {
     const keys = Object.keys(localStorage).filter(k => k.startsWith('onboarded_'));
     return keys.some(k => localStorage.getItem(k) === 'true');
   });
+
+  // Auth callback must render before any auth guards — user isn't authenticated yet
+  if (location.pathname === '/auth/callback') {
+    return <AuthCallbackPage />;
+  }
 
   if (loading) {
     return (
