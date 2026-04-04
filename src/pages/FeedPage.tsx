@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef, useCallback, ChangeEvent } from 'react';
-import { storage } from '../firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { supabase } from '../lib/supabase';
 import { useUser } from '../context/UserContext';
 import { Post, User, Comment } from '../types';
@@ -391,11 +389,16 @@ export function FeedPage() {
       let mediaUrl: string | null = null;
       let mediaType: 'image' | 'video' | null = null;
 
-      // Media upload still uses Firebase Storage (P2.27 will migrate to Supabase Storage)
       if (selectedFile) {
-        const fileRef = ref(storage, `posts/${user.id}/${Date.now()}_${selectedFile.name}`);
-        const uploadResult = await uploadBytes(fileRef, selectedFile);
-        mediaUrl = await getDownloadURL(uploadResult.ref);
+        const filePath = `${user.id}/${Date.now()}_${selectedFile.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('post-media')
+          .upload(filePath, selectedFile, { cacheControl: '3600', upsert: false });
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage
+          .from('post-media')
+          .getPublicUrl(filePath);
+        mediaUrl = urlData.publicUrl;
         mediaType = selectedFile.type.startsWith('video') ? 'video' : 'image';
       }
 
