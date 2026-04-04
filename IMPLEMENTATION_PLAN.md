@@ -82,7 +82,7 @@
 - [x] **P2.19** Add LinkedIn OIDC sign-in — configure provider in Supabase dashboard, use `provider: 'linkedin_oidc'`, extract profile claims for onboarding auto-fill per specs/supabase-linkedin-oidc.md. Note: LinkedIn provides name/email/avatar but NOT job title/company — those come from onboarding
 - [x] **P2.20** Add magic link (passwordless email) sign-in — `signInWithOtp({ email })` with redirect URL per specs/supabase-auth.md
 - [x] **P2.21** Create auth callback handler — exchange code for session on OAuth/magic link redirect per specs/supabase-auth.md (PKCE flow)
-- [ ] **P2.22** Update login UI in App.tsx — add LinkedIn and magic link options alongside Google
+- [x] **P2.22** Update login UI in App.tsx — add LinkedIn and magic link options alongside Google
 
 ### 2E: Service Layer Migration (page by page)
 
