@@ -88,7 +88,7 @@
 
 > Replace all Firebase reads/writes with Supabase queries. Each task covers one page.
 
-- [ ] **P2.23** Migrate OnboardingPage — write user profile to Supabase `profiles` table, auto-fill from LinkedIn `user_metadata` if available (name, avatar_url, email only — job/company from onboarding form)
+- [x] **P2.23** Migrate OnboardingPage — write user profile to Supabase `profiles` table, auto-fill from LinkedIn `user_metadata` if available (name, avatar_url, email only — job/company from onboarding form)
 - [ ] **P2.24** Migrate FeedPage — replace Firestore `posts` reads/writes with Supabase `.from('posts')`, join `profiles` for author data (eliminates N+1), real-time via `channel().on('postgres_changes')`
 - [ ] **P2.25** Migrate FeedPage comments — replace subcollection pattern with Supabase `post_comments` table queries, join `profiles` for author name/avatar
 - [ ] **P2.26** Migrate FeedPage likes — replace Firestore `posts/{id}/likes` subcollection with Supabase `post_likes` table. Toggle: insert/delete row, update `posts.likes_count` via RPC or app-level increment
