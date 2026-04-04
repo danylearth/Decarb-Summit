@@ -1,8 +1,9 @@
 # Implementation Plan
 
 <!-- Release: v2 — Supabase Platform Overhaul -->
-<!-- Audience: Summit attendees (networking, scheduling, Q&A) + Admins (management via dashboard & Claude MCP) -->
-<!-- Phases: Bug Fixes → Supabase Migration → Event Schedule → Admin Dashboard + MCP -->
+<!-- Current Release: v2.4b–2.13d — Supabase Database Migration (8 tables) -->
+<!-- Audience: Summit attendees (networking, scheduling, Q&A) + Admins (management via shadcn/ui dashboard) -->
+<!-- Phases: Bug Fixes → Supabase Migration → Event Schedule → Admin Dashboard -->
 
 ---
 
@@ -41,23 +42,34 @@
 - [x] **P2.1** Initialize Supabase project — `npx supabase init`, configure `config.toml` per specs/supabase-schema-migrations.md
 - [x] **P2.2** Create `src/lib/supabase.ts` — Supabase client initialization with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` per specs/supabase-client.md. Use PKCE flow, auto-refresh tokens
 - [x] **P2.3** Generate database types — `npx supabase gen types typescript` → `src/lib/database.types.ts` per specs/supabase-client.md
-- [ ] **P2.4** Add env vars to `.env.local` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Add to Vercel via `vercel env` (use `vercel-plugin:env` skill)
+- [x] **P2.4a** Add env vars to `.env.local` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (done)
+- [x] **P2.4b** Start local Supabase — `supabase start` (requires Docker). Verify Studio at `:54323`, confirm auth providers (Google, LinkedIn OIDC, email/password, magic link) are visible. Prerequisite for all migration tasks
+- [ ] **P2.4c** Push env vars to Vercel — `vercel env` (use `vercel-plugin:env` skill). Defer until deploy phase if not needed locally
 
 ### 2B: Database Schema (migrations)
 
-> All tables per specs/decarb-connect-v2.md schema. Each migration per specs/supabase-schema-migrations.md patterns.
+> All tables per specs/supabase-migration-database.md (authoritative schema). Each migration per specs/supabase-schema-migrations.md patterns.
+> Column designs derive from specs/supabase-migration-database.md, cross-referenced with `src/types.ts` and Firestore usage in pages.
+> Every `create table` must be followed by `alter table ... enable row level security` per specs/supabase-schema-migrations.md.
+> Migration ordering: utilities first, then `profiles` (all other tables FK to it), then `posts` before `post_likes`/`post_comments`, `resources` before `saved_resources`.
+> Use `(select auth.uid())` subquery form in all RLS policies for performance.
+> Table name is `profiles` (not `users`) — mirrors Firestore `users` collection but avoids collision with `auth.users`.
+> All primary keys are `uuid default gen_random_uuid()` except `profiles.id` (references `auth.users`) and junction tables (composite PKs).
+> Tables with `updated_at` columns (`profiles`, `posts`, `post_comments`) must attach the `set_updated_at` trigger.
 
-- [ ] **P2.5** Migration: `users` table — profiles with `role` enum (`user`, `admin`, `super_admin`), FK to `auth.users`, RLS policies (users read all, update own)
-- [ ] **P2.6** Migration: `posts` table — community feed posts with author FK, RLS (read all, insert/update/delete own)
-- [ ] **P2.7** Migration: `comments` table — on posts, author FK, RLS (read all, insert/update/delete own)
-- [ ] **P2.8** Migration: `connections` table — user-to-user with status enum (`pending`, `accepted`, `rejected`), RLS (participants only)
-- [ ] **P2.9** Migration: `messages` table — DMs between connected users, RLS (sender/receiver only)
-- [ ] **P2.10** Migration: `events` table — schedule sessions (title, description, speaker, room, start/end time, track), RLS (read all, admin insert/update/delete)
-- [ ] **P2.11** Migration: `event_bookmarks` table — user + event FK, unique constraint, RLS (own bookmarks)
-- [ ] **P2.12** Migration: `event_checkins` table — user + event FK + timestamp, RLS (own check-ins, admin read all)
-- [ ] **P2.13** Migration: `questions` table — live Q&A per session (author, content, upvotes, highlighted flag), RLS (read all in session, insert own, admin highlight)
-- [ ] **P2.14** Migration: `resources` table — summit resources/documents, RLS (read all, admin CRUD)
-- [ ] **P2.15** Regenerate `database.types.ts` after all migrations
+- [ ] **P2.4d** Migration: utility functions — create `set_updated_at()` trigger function (sets `new.updated_at = now()` on UPDATE) and `is_admin()` helper function (returns `exists(select 1 from profiles where id = (select auth.uid()) and is_admin = true)`). Must be the first migration — all table migrations depend on these. Per specs/supabase-schema-migrations.md
+- [ ] **P2.5** Migration: `profiles` table — per specs/supabase-migration-database.md `profiles` section. Key columns: `id uuid PK references auth.users on delete cascade`, `name`, `handle` (unique), `role text default 'Community Member'`, `company`, `avatar_url`, `bio`, `tags text[]`, `linkedin_url`, `twitter_url`, `is_online`, `is_verified`, `is_admin`, `onboarded`, `email`, `membership jsonb`, `preferences jsonb`, `created_at`, `updated_at`. Attach `set_updated_at` trigger. RLS: select all authenticated, insert/update own, admin update any (via `is_admin()`), admin delete. Per specs/supabase-schema-migrations.md
+- [ ] **P2.6** Migration: `posts` table — per specs/supabase-migration-database.md `posts` section. `id uuid PK`, `author_id uuid FK→profiles on delete cascade`, `content text not null`, `media_url`, `media_type text check ('image','video')`, `likes_count int default 0`, `comments_count int default 0`, `is_sponsored`, `created_at`, `updated_at`. Attach `set_updated_at` trigger. RLS: select all, insert/update/delete own or admin (via `is_admin()`). Per specs/supabase-schema-migrations.md
+- [ ] **P2.7** Migration: `post_likes` table — per specs/supabase-migration-database.md. Junction table: `post_id uuid FK→posts on delete cascade`, `user_id uuid FK→profiles on delete cascade`, `created_at`. PK on `(post_id, user_id)`. RLS: select all, insert/delete own `user_id`. Per specs/supabase-schema-migrations.md
+- [ ] **P2.8** Migration: `post_comments` table — per specs/supabase-migration-database.md. `id uuid PK`, `post_id FK→posts on delete cascade`, `author_id FK→profiles on delete cascade`, `content text not null`, `is_edited boolean default false`, `created_at`, `updated_at`. Attach `set_updated_at` trigger. RLS: select all, insert own, update own (content + is_edited only), delete own or admin (via `is_admin()`). Per specs/supabase-schema-migrations.md
+- [ ] **P2.9** Migration: `resources` table — per specs/supabase-migration-database.md. `id uuid PK`, `title`, `description`, `type text check ('Video','Report','Insight')`, `category`, `author text` (denormalized name), `duration`, `stats`, `image_url`, `icon`, `created_at`. RLS: select all, insert/update/delete admin only (via `is_admin()`). Per specs/supabase-schema-migrations.md
+- [ ] **P2.10** Migration: `saved_resources` table — per specs/supabase-migration-database.md. Junction table: `user_id uuid FK→profiles on delete cascade`, `resource_id uuid FK→resources on delete cascade`, `created_at`. PK on `(user_id, resource_id)`. RLS: select/insert/delete own `user_id`. Per specs/supabase-schema-migrations.md
+- [ ] **P2.11** Migration: `messages` table — per specs/supabase-migration-database.md. `id uuid PK`, `sender_id FK→profiles on delete cascade`, `receiver_id FK→profiles on delete cascade`, `content text not null`, `is_read boolean default false`, `created_at`. RLS: select where sender or receiver, insert where sender, update `is_read` where receiver only. Per specs/supabase-schema-migrations.md
+- [ ] **P2.12** Migration: `connections` table — per specs/supabase-migration-database.md. `id uuid PK`, `user_id FK→profiles on delete cascade`, `other_user_id FK→profiles on delete cascade`, `status text check ('pending','accepted','rejected')`, `created_at`. Unique on `(user_id, other_user_id)`. RLS: select where participant, insert own `user_id`, update status where `other_user_id` only. Per specs/supabase-schema-migrations.md
+- [ ] **P2.13a** Migration verification — run `supabase db reset` to confirm all 9 migrations (1 utility + 8 tables) apply cleanly in order. Fix any FK ordering or syntax issues
+- [ ] **P2.13b** Regenerate `database.types.ts` — `npx supabase gen types typescript --local > src/lib/database.types.ts`. Verify types are non-empty and match all 8 tables
+- [ ] **P2.13c** Create `supabase/seed.sql` — must insert `auth.users` rows first (hardcoded UUIDs, runs as superuser), then profiles, then all dependent tables. Include 4+ profiles, 3+ posts with likes/comments, 3+ resources with saves, sample messages between users, sample connections. Run `supabase db reset` to verify seed applies after migrations. Per specs/supabase-schema-migrations.md
+- [ ] **P2.13d** Auth provider smoke test — with local Supabase running, verify in Studio (:54323) that Google, LinkedIn OIDC, email/password sign-up, and magic link are all configured and functional. Email testing via Inbucket (:54324)
 
 ### 2C: Storage Buckets
 
@@ -66,8 +78,8 @@
 
 ### 2D: Auth
 
-- [ ] **P2.18** Replace `UserContext.tsx` with Supabase auth — `onAuthStateChange`, `signInWithOAuth({ provider: 'google' })`, session management per specs/supabase-auth.md
-- [ ] **P2.19** Add LinkedIn OIDC sign-in — configure provider in Supabase dashboard, use `provider: 'linkedin_oidc'`, extract profile claims for onboarding auto-fill per specs/supabase-linkedin-oidc.md
+- [ ] **P2.18** Replace `UserContext.tsx` with Supabase auth — `onAuthStateChange`, `signInWithOAuth({ provider: 'google' })`, session management per specs/supabase-auth.md. Table is `profiles` (not `users`)
+- [ ] **P2.19** Add LinkedIn OIDC sign-in — configure provider in Supabase dashboard, use `provider: 'linkedin_oidc'`, extract profile claims for onboarding auto-fill per specs/supabase-linkedin-oidc.md. Note: LinkedIn provides name/email/avatar but NOT job title/company — those come from onboarding
 - [ ] **P2.20** Add magic link (passwordless email) sign-in — `signInWithOtp({ email })` with redirect URL per specs/supabase-auth.md
 - [ ] **P2.21** Create auth callback handler — exchange code for session on OAuth/magic link redirect per specs/supabase-auth.md (PKCE flow)
 - [ ] **P2.22** Update login UI in App.tsx — add LinkedIn and magic link options alongside Google
@@ -76,33 +88,42 @@
 
 > Replace all Firebase reads/writes with Supabase queries. Each task covers one page.
 
-- [ ] **P2.23** Migrate OnboardingPage — write user profile to Supabase `users` table, auto-fill from LinkedIn `user_metadata` if available
-- [ ] **P2.24** Migrate FeedPage — replace Firestore `posts` reads/writes with Supabase `.from('posts')`, use join for author data (eliminates N+1), real-time via `channel().on('postgres_changes')`
-- [ ] **P2.25** Migrate FeedPage comments — replace subcollection pattern with Supabase `comments` table queries
-- [ ] **P2.26** Migrate FeedPage media uploads — replace Firebase Storage with Supabase Storage `post-media` bucket per specs/supabase-storage.md (fix uploadProgress tracking)
-- [ ] **P2.27** Migrate ConnectionsPage — persist swipe actions to `connections` table (fixes unpersisted matches bug), query accepted connections for "Active Matches"
-- [ ] **P2.28** Migrate ChatPage — replace Firestore `messages` with Supabase `messages` table, proper query filtering (fixes inefficient all-messages fetch), real-time subscriptions
-- [ ] **P2.29** Migrate ChatPage voice notes — replace Firebase Storage with Supabase Storage `voice-notes` bucket
-- [ ] **P2.30** Migrate ResourcesPage + ResourceDetailPage — replace Firestore reads with Supabase `resources` queries, replace saved_resources subcollection with Supabase pattern
-- [ ] **P2.31** Migrate ProfilePage + PersonalInfoPage — Supabase `users` reads/writes, avatar upload to Supabase Storage (fixes base64 bloat bug)
-- [ ] **P2.32** Migrate SettingsPage — saved resources from Supabase, preferences in `users` table
-- [ ] **P2.33** Migrate MembershipPage — membership data in `users` table
-- [ ] **P2.34** Migrate AdminDashboardPage — Supabase queries for users/posts/resources, add proper role guard
-- [ ] **P2.35** Update seed service — replace Firestore seeding with Supabase `seed.sql` per specs/supabase-schema-migrations.md
+- [ ] **P2.23** Migrate OnboardingPage — write user profile to Supabase `profiles` table, auto-fill from LinkedIn `user_metadata` if available (name, avatar_url, email only — job/company from onboarding form)
+- [ ] **P2.24** Migrate FeedPage — replace Firestore `posts` reads/writes with Supabase `.from('posts')`, join `profiles` for author data (eliminates N+1), real-time via `channel().on('postgres_changes')`
+- [ ] **P2.25** Migrate FeedPage comments — replace subcollection pattern with Supabase `post_comments` table queries, join `profiles` for author name/avatar
+- [ ] **P2.26** Migrate FeedPage likes — replace Firestore `posts/{id}/likes` subcollection with Supabase `post_likes` table. Toggle: insert/delete row, update `posts.likes_count` via RPC or app-level increment
+- [ ] **P2.27** Migrate FeedPage media uploads — replace Firebase Storage with Supabase Storage `post-media` bucket per specs/supabase-storage.md
+- [ ] **P2.28** Migrate ConnectionsPage — persist swipe actions to `connections` table (fixes unpersisted matches bug), query accepted connections for "Active Matches". Column names: `user_id`/`other_user_id`
+- [ ] **P2.29** Migrate ChatPage — replace Firestore `messages` with Supabase `messages` table, proper query filtering (fixes inefficient all-messages fetch), real-time subscriptions. Use `is_read` for read receipts
+- [ ] **P2.30** Migrate ChatPage voice notes — replace Firebase Storage with Supabase Storage `voice-notes` bucket
+- [ ] **P2.31** Migrate ResourcesPage + ResourceDetailPage — replace Firestore reads with Supabase `resources` queries, replace `saved_resources` subcollection with Supabase `saved_resources` junction table
+- [ ] **P2.32** Migrate ProfilePage + PersonalInfoPage — Supabase `profiles` reads/writes, avatar upload to Supabase Storage (fixes base64 bloat bug)
+- [ ] **P2.33** Migrate SettingsPage — saved resources from `saved_resources` table, preferences from `profiles.preferences` jsonb column
+- [ ] **P2.34** Migrate MembershipPage — membership data from `profiles.membership` jsonb column
+- [ ] **P2.35** Migrate AdminDashboardPage — Supabase queries for profiles/posts/resources, guard on `profiles.is_admin`
+- [ ] **P2.36** Update seed service — replace Firestore seeding with Supabase `seed.sql` per specs/supabase-schema-migrations.md
 
 ### 2F: Cleanup
 
-- [ ] **P2.36** Remove Firebase — delete `firebase.ts`, `firebase-applet-config.json`, `firebase.json`, `firestore.rules`, uninstall `firebase` from `package.json`
-- [ ] **P2.37** Remove `src/constants.ts` mock data (or reduce to type examples only)
-- [ ] **P2.38** Update `vercel.json` with any needed headers/env. Deploy and verify with `vercel-plugin:deploy`
+- [ ] **P2.37** Remove Firebase — delete `firebase.ts`, `firebase-applet-config.json`, `firebase.json`, `firestore.rules`, uninstall `firebase` from `package.json`
+- [ ] **P2.38** Remove `src/constants.ts` mock data (or reduce to type examples only)
+- [ ] **P2.39** Update `vercel.json` with any needed headers/env. Deploy and verify with `vercel-plugin:deploy`
 
 ---
 
 ## Phase 3: Event Schedule Feature
 
-> New feature per specs/decarb-connect-v2.md. Tables already created in Phase 2B.
+> New feature per specs/decarb-connect-v2.md. Event tables created here (not in Phase 2B — they have no Firestore equivalent to migrate).
 
-### Schedule Browsing
+### 3A: Event Schema (migrations)
+
+- [ ] **P3.0a** Migration: `events` table — per specs/decarb-connect-v2.md (id uuid PK, title, description, speaker text, room text, track text, starts_at timestamptz, ends_at timestamptz, created_at). RLS: select all, insert/update/delete admin only (check `profiles.is_admin` via join). Per specs/supabase-schema-migrations.md
+- [ ] **P3.0b** Migration: `event_bookmarks` table — (user_id FK→profiles on delete cascade, event_id FK→events on delete cascade, created_at). PK on (user_id, event_id). RLS: select/insert/delete own. Per specs/supabase-schema-migrations.md
+- [ ] **P3.0c** Migration: `event_checkins` table — (user_id FK→profiles on delete cascade, event_id FK→events on delete cascade, checked_in_at timestamptz default now()). PK on (user_id, event_id). RLS: insert/select own, admin select all. Per specs/supabase-schema-migrations.md
+- [ ] **P3.0d** Migration: `questions` table — (id uuid PK, event_id FK→events on delete cascade, author_id FK→profiles, content text not null, upvotes int default 0, is_highlighted boolean default false, created_at). RLS: select all, insert own, update admin only (highlight). Per specs/supabase-schema-migrations.md
+- [ ] **P3.0e** Regenerate `database.types.ts` after event migrations. Add event seed data to `seed.sql`
+
+### 3B: Schedule Browsing
 
 - [ ] **P3.1** Create `src/pages/SchedulePage.tsx` — day/time grid view of all events, filter by track/room/speaker/time slot. Real-time updates via Supabase subscription
 - [ ] **P3.2** Create `src/pages/SessionDetailPage.tsx` — session description, speaker bio, room info, bookmark button, check-in button, Q&A section
@@ -122,13 +143,13 @@
 
 ### Seed Data
 
-- [ ] **P3.10** Add schedule seed data to `seed.sql` — sample sessions across multiple days/tracks/rooms for development
+- [ ] **P3.10** Add schedule seed data to `seed.sql` — sample sessions across multiple days/tracks/rooms for development (covered by P3.0e if done together)
 
 ---
 
-## Phase 4: Admin Dashboard + Claude MCP
+## Phase 4: Admin Dashboard
 
-> Per specs/decarb-connect-v2.md, specs/shadcn-ui.md, specs/anthropic-claude-sdk.md, specs/mcp-typescript-sdk.md.
+> Per specs/decarb-connect-v2.md, specs/shadcn-ui.md. Anthropic Claude and MCP Server removed from scope per TECHNOLOGY_CHOICES.md — admin moderation is manual via dashboard UI.
 
 ### 4A: Admin UI Setup
 
@@ -138,30 +159,11 @@
 
 ### 4B: Admin Dashboard Rebuild
 
-- [ ] **P4.4** Rebuild AdminDashboardPage — User Management tab with data table (search, filter, edit roles, ban/suspend) using TanStack Table + shadcn per specs/shadcn-ui.md
+- [ ] **P4.4** Rebuild AdminDashboardPage — User Management tab with data table (search, filter, edit roles, ban/suspend) using TanStack Table + shadcn per specs/shadcn-ui.md. Use `front-end-design` skill for UI quality
 - [ ] **P4.5** Add Event Management tab — CRUD for sessions, speakers, rooms, tracks
-- [ ] **P4.6** Add Content Moderation tab — flagged posts/comments queue with approve/remove actions
+- [ ] **P4.6** Add Content Moderation tab — manual moderation queue for reported posts/comments with approve/remove actions (no AI — manual review only)
 - [ ] **P4.7** Add Analytics tab — user count, active connections, popular sessions, check-in rates from Supabase aggregation queries
 - [ ] **P4.8** Add Onboarding Management tab — view onboarding completion rates, manually trigger re-onboard for specific users per specs/decarb-connect-v2.md
-
-### 4C: Supabase Edge Functions (Shared API)
-
-- [ ] **P4.9** Create admin Edge Function — shared API endpoint consumed by both dashboard UI and MCP server. Auth via service role key. Routes: user CRUD, event CRUD, moderation actions per specs/supabase-edge-functions.md
-- [ ] **P4.10** Add CORS handling to Edge Function per specs/supabase-edge-functions.md
-
-### 4D: Content Moderation with Claude
-
-- [ ] **P4.11** Create moderation Edge Function — uses `@anthropic-ai/sdk` with Claude Haiku for automated content moderation of posts/comments per specs/anthropic-claude-sdk.md. `ANTHROPIC_API_KEY` as Supabase secret
-- [ ] **P4.12** Wire moderation into post/comment creation flow — call moderation function on new content, flag or auto-remove based on Claude response
-
-### 4E: Claude MCP Server
-
-- [ ] **P4.13** Create MCP server project — `mcp-server/` directory, `@modelcontextprotocol/sdk` v2, Zod v4, stdio transport per specs/mcp-typescript-sdk.md
-- [ ] **P4.14** Register user tools — `list_users`, `get_user`, `update_user_role`, `ban_user`, `unban_user` per specs/mcp-typescript-sdk.md + specs/decarb-connect-v2.md
-- [ ] **P4.15** Register event tools — `create_event`, `update_event`, `delete_event`, `list_events`
-- [ ] **P4.16** Register moderation tools — `list_flagged_posts`, `remove_post`, `approve_post`
-- [ ] **P4.17** Register analytics tools — `get_user_stats`, `get_event_stats`, `get_engagement_stats`
-- [ ] **P4.18** Add MCP server connection docs — README for connecting Claude Desktop or Claude Code to the server
 
 ---
 
@@ -173,7 +175,6 @@
 - [ ] **T2** Auth flow tests — verify sign-in/sign-out, session persistence, role-based access
 - [ ] **T3** Supabase query tests — verify CRUD operations against local Supabase (via `supabase start`)
 - [ ] **T4** Schedule feature tests — bookmark conflict detection logic, Q&A upvote mechanics
-- [ ] **T5** MCP server tests — tool registration, input validation, Supabase calls per specs/mcp-typescript-sdk.md
 
 ---
 
@@ -186,6 +187,8 @@
 - [ ] File attachment uploads in chat (currently metadata-only, bytes never uploaded)
 - [ ] Post-event follow-up features (activity map shows this as a lifecycle stage)
 - [ ] Gemini AI features (existing `GEMINI_API_KEY` retained but unused in v2 scope)
+- [ ] AI content moderation via Claude (removed from v2 scope — revisit if manual moderation becomes bottleneck)
+- [ ] MCP server for natural language admin (removed from v2 scope — revisit post-dashboard)
 - [ ] Advanced analytics dashboard (engagement trends, time-series, export)
 - [ ] Dedicated speaker profiles page (spec implies linked profiles from sessions — currently speaker bio is inline on SessionDetailPage)
 - [ ] Refactor Sidebar/BottomNav to share nav item logic (currently fully duplicated)
@@ -194,9 +197,20 @@
 
 ## Notes
 
-- **Skill references:** Use `vercel-plugin:shadcn` for P4.1-P4.2. Use `vercel-plugin:env` for P2.4. Use `vercel-plugin:deploy` for P2.38. Use `vercel-plugin:verification` after each phase.
-- **Env vars needed:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, LinkedIn OAuth credentials (configured in Supabase dashboard)
+- **Current release (v2.4b–2.13d):** Tasks P2.4b through P2.13d. Prerequisite: Docker running for `supabase start`. Deliverable: full Postgres schema (1 utility + 8 tables) locally with RLS, generated types, seed data, and auth providers configured.
+- **Authoritative schema source:** `specs/supabase-migration-database.md` — defines all 8 tables, column types, RLS policies, and auth providers. Overrides any column details in the implementation plan if there's a conflict.
+- **Table naming:** `profiles` (not `users`) to avoid collision with `auth.users`. All FK references use `profiles(id)`.
+- **Admin role design:** `profiles.is_admin boolean` for RLS checks + `profiles.role text` for human-readable display (e.g., 'Community Member', 'Sustainability Director'). NOT a Postgres enum — role is a freeform job title, `is_admin` is the authorization flag. RLS policies use `is_admin()` helper function (created in P2.4d utility migration).
+- **Junction tables:** `post_likes(post_id, user_id)` and `saved_resources(user_id, resource_id)` use composite primary keys, no separate `id` column.
+- **Migration ordering constraint:** Utility functions first (P2.4d), then `profiles` (all other tables FK to it). Then `posts` before `post_likes`/`post_comments`. Then `resources` before `saved_resources`. `messages` and `connections` are independent. Total: 9 migration files.
+- **`updated_at` trigger:** Tables with `updated_at` columns (`profiles`, `posts`, `post_comments`) must include `create trigger set_updated_at before update on <table> for each row execute function set_updated_at()` in their migration file.
+- **Seed data auth prerequisite:** `seed.sql` must insert into `auth.users` before `profiles` since `profiles.id` references `auth.users(id)`. Use hardcoded UUIDs for predictable test data. Runs as superuser so no RLS restrictions apply.
+- **Event tables deferred to Phase 3:** `events`, `event_bookmarks`, `event_checkins`, `questions` have no Firestore equivalent — they're new features, not migration targets. Creating them in Phase 2B would add untestable schema.
+- **Anthropic/MCP removed from scope:** Per TECHNOLOGY_CHOICES.md, Claude AI content moderation and MCP server are dropped. Phase 4 is admin dashboard only (shadcn/ui). Manual moderation replaces AI moderation.
+- **Skill references:** Use `vercel-plugin:shadcn` for P4.1-P4.2. Use `vercel-plugin:env` for P2.4c. Use `vercel-plugin:deploy` for P2.39. Use `vercel-plugin:verification` after each phase.
+- **Env vars needed:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (all in `.env.local`). Future: LinkedIn OAuth credentials (configured in Supabase dashboard).
+- **`src/lib/` exists** — created by P2.2 with `supabase.ts` and `database.types.ts`.
 - **`react-router-dom` vs `react-router`:** Current `package.json` uses `react-router-dom@7.13.1`. Per specs/react-router-v7.md, v7 exports from `react-router` but `react-router-dom` still works as a re-export. No change needed.
 - **Path alias:** After P1.3 fix, `@/` → `./src/`. All imports like `@/components/UI` resolve to `src/components/UI`.
-- **No `src/lib/` directory exists yet** — P2.2 creates it. No `src/hooks/` either.
-- **Firebase config note:** `firestore.rules` has a hardcoded admin email `d@planet.earth` — will be removed with Firebase cleanup in P2.36.
+- **Firebase config note:** `firestore.rules` has a hardcoded admin email `d@planet.earth` — will be removed with Firebase cleanup in P2.37.
+- **`src/types.ts` update needed:** After migration, `Post.author` (embedded User) becomes a join via `author_id`, `Comment` loses denormalized `authorName`/`authorAvatar`, `Message.sender` becomes `sender_id`/`receiver_id`. Type updates happen during service layer migration (Phase 2E), not during schema phase.
