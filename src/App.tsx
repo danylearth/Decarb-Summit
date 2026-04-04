@@ -17,6 +17,7 @@ import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { UserProvider, useUser } from './context/UserContext';
 import { ResourceDetailPage } from './pages/ResourceDetailPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/UI';
 import { LogIn, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -327,10 +328,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <UserProvider>
-        <AppContent />
-      </UserProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <UserProvider>
+          <AppContent />
+        </UserProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

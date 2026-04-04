@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { Button, Card, cn } from '../components/UI';
-import { ArrowLeft, Check, Zap, Shield, Globe, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Zap, Shield, Globe, Trash2, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function MembershipPage() {

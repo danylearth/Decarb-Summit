@@ -21,6 +21,7 @@ const INTEREST_TAGS = [
 
 export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
   const { user, updateUser } = useUser();
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(() => {
     const saved = sessionStorage.getItem('onboarding_step');
     return saved ? parseInt(saved, 10) : 0;
@@ -82,6 +83,7 @@ export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
       onComplete?.();
     } catch (err) {
       console.error('[Onboarding] Save FAILED:', err);
+      setSaveError('Failed to save your profile. Please try again.');
       setIsFinishing(false);
     }
   };
@@ -89,6 +91,7 @@ export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
   const handleSkip = async () => {
     if (isFinishing) return;
     setIsFinishing(true);
+    setSaveError(null);
     try {
       await updateUser({
         onboarded: true,
@@ -98,6 +101,7 @@ export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
       onComplete?.();
     } catch (err) {
       console.error('Error skipping onboarding:', err);
+      setSaveError('Failed to complete setup. Please try again.');
       setIsFinishing(false);
     }
   };
@@ -333,7 +337,10 @@ export function OnboardingPage({ onComplete }: { onComplete?: () => void }) {
                   <ArrowLeft className="w-4 h-4" />
                   Back
                 </button>
-                <Button 
+                {saveError && (
+                  <p className="text-xs text-red-400 font-medium">{saveError}</p>
+                )}
+                <Button
                   onClick={handleNext}
                   disabled={isFinishing}
                   className="rounded-full px-8 flex items-center gap-2"

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { auth } from '../firebase';
 import { Button, Card } from '../components/UI';
-import { ArrowLeft, Save, User, Mail, Briefcase, Building2, AlignLeft, Linkedin, Twitter } from 'lucide-react';
+import { ArrowLeft, Save, User, Mail, Briefcase, Building2, AlignLeft, Linkedin, Twitter, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function PersonalInfoPage() {
@@ -20,6 +20,8 @@ export function PersonalInfoPage() {
     twitter: user?.twitter || '',
   });
   const [isAvatarSaving, setIsAvatarSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -36,16 +38,25 @@ export function PersonalInfoPage() {
   }
 
   const handleSave = async () => {
-    await updateUser({
-      name: formData.name,
-      role: formData.role,
-      company: formData.company,
-      avatar: formData.avatar,
-      bio: formData.bio,
-      linkedin: formData.linkedin,
-      twitter: formData.twitter,
-    });
-    navigate('/profile');
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await updateUser({
+        name: formData.name,
+        role: formData.role,
+        company: formData.company,
+        avatar: formData.avatar,
+        bio: formData.bio,
+        linkedin: formData.linkedin,
+        twitter: formData.twitter,
+      });
+      navigate('/profile');
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+      setSaveError('Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,9 +204,12 @@ export function PersonalInfoPage() {
           </div>
         </Card>
 
-        <Button onClick={handleSave} className="w-full py-4">
-          <Save className="w-4 h-4" />
-          Save Changes
+        {saveError && (
+          <p className="text-sm text-red-400 text-center font-medium">{saveError}</p>
+        )}
+        <Button onClick={handleSave} disabled={isSaving} className="w-full py-4">
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
     </motion.main>
