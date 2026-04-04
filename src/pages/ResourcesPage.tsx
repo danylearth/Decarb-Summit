@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import { MOCK_RESOURCES } from '../constants';
 import { Resource } from '../types';
 import { Card } from '../components/UI';
-import { Play, Download, FileText, BarChart3, Clock, ChevronRight, Search, X } from 'lucide-react';
+import { Play, Download, FileText, BarChart3, Clock, ChevronRight, Search, X, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function ResourcesPage() {
@@ -19,8 +18,7 @@ export function ResourcesPage() {
     const q = collection(db, 'resources');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (snapshot.empty) {
-        // Fallback to mock data if Firestore is empty
-        setResources(MOCK_RESOURCES);
+        setResources([]);
         setLoading(false);
         return;
       }
@@ -176,8 +174,14 @@ export function ResourcesPage() {
       </section>
 
       {resources.length === 0 && (
-        <div className="text-center py-20">
-          <p className="text-on-surface-variant font-medium italic">No resources available yet.</p>
+        <div className="flex flex-col items-center justify-center text-center py-20">
+          <div className="w-16 h-16 rounded-full bg-primary-accent/10 flex items-center justify-center mb-6">
+            <BookOpen className="w-8 h-8 text-primary-accent" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">No Resources Yet</h2>
+          <p className="text-on-surface-variant text-sm max-w-xs">
+            Resources will appear here once they're published. Check back soon for video masterclasses and industry reports.
+          </p>
         </div>
       )}
     </motion.main>

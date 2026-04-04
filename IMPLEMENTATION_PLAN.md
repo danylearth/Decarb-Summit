@@ -19,15 +19,15 @@
 - [x] **P1.5** Fix PersonalInfoPage `handleSave` — added `async`/`await` on `updateUser()` so Firestore write completes before navigating to `/profile`
 - [x] **P1.6** Remove console.log statements from OnboardingPage (lines ~78, 81) and UserContext.tsx (lines ~175, 177) — removed debug logging from `handleFinish` and `updateUser`
 - [x] **P1.7** Hide dev "Reset Onboarding" button in production in SettingsPage — gated behind `import.meta.env.DEV`, added `vite/client` types to `tsconfig.json`
-- [ ] **P1.8** Fix ResourceDetailPage hardcoded article body — render actual `resource.description` from Firestore instead of static content
-- [ ] **P1.9** Fix state update during render in App.tsx — `setLocalOnboarded(true)` is called inline during render. Move to a `useEffect`
+- [x] **P1.8** Fix ResourceDetailPage hardcoded article body — render actual `resource.description` from Firestore instead of static content
+- [x] **P1.9** Fix state update during render in App.tsx — moved `setLocalOnboarded(true)` from inline render into a `useEffect` to avoid React warning about state updates during render
 
 ### Low Priority (pre-migration)
 
-- [ ] **P1.10** Fix ProfilePage hardcoded location ("London, UK") and employment type ("Full-time") — either remove or source from user document
-- [ ] **P1.11** Remove `MOCK_RESOURCES` fallback from ResourcesPage — show proper empty state instead
-- [ ] **P1.12** Fix ResourceDetailPage "Download PDF" button — either implement download or remove the button
-- [ ] **P1.13** Fix ChatPage date separator hardcoded as "Today" — compute actual date from message timestamps
+- [x] **P1.10** Fix ProfilePage hardcoded location ("London, UK") and employment type ("Full-time") — removed hardcoded elements since no backing data exists in User type or onboarding flow
+- [x] **P1.11** Remove `MOCK_RESOURCES` fallback from ResourcesPage — show proper empty state with icon and descriptive message instead of falling back to mock data
+- [x] **P1.12** Fix ResourceDetailPage "Download PDF" button — removed non-functional button and unused `isReport` variable/`Download` import
+- [x] **P1.13** Fix ChatPage date separator hardcoded as "Today" — computes actual date from message timestamps, groups by day with "Today"/"Yesterday"/full date labels
 - [ ] **P1.14** Audit and fix empty/loading/error states across pages — several pages have no error handling for failed Firestore reads
 
 ---

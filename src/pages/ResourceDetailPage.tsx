@@ -4,7 +4,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc, collection, query, limit, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Resource } from '../types';
 import { Button, Card, cn } from '../components/UI';
-import { ArrowLeft, Play, Download, Share2, Clock, Calendar, User, Bookmark, ChevronRight, Check } from 'lucide-react';
+import { ArrowLeft, Play, Share2, Clock, Calendar, User, Bookmark, ChevronRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useUser } from '../context/UserContext';
 
@@ -117,7 +117,6 @@ export function ResourceDetailPage() {
   }
 
   const isVideo = resource.type === 'Video';
-  const isReport = resource.type === 'Report';
 
   return (
     <motion.main 
@@ -205,12 +204,6 @@ export function ResourceDetailPage() {
               Share
             </Button>
           </div>
-          {isReport && (
-            <Button size="sm" className="rounded-full">
-              <Download className="w-4 h-4" />
-              Download PDF
-            </Button>
-          )}
         </div>
 
         <AnimatePresence>

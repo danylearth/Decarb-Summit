@@ -390,12 +390,35 @@ export function ChatPage() {
             </motion.div>
           ) : (
             <>
-              <div className="flex justify-center my-6">
-                <div className="px-4 py-1 rounded-full bg-surface-container-low/50 backdrop-blur-sm">
-                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Today</span>
+              {messages.map((msg, idx) => {
+                const msgDate = msg.timestamp?.toDate?.() ? msg.timestamp.toDate() : null;
+                const prevDate = idx > 0 && messages[idx - 1].timestamp?.toDate?.() ? messages[idx - 1].timestamp.toDate() : null;
+                const showDateSeparator = msgDate && (idx === 0 || !prevDate || msgDate.toDateString() !== prevDate.toDateString());
+
+                let dateLabel = '';
+                if (showDateSeparator && msgDate) {
+                  const today = new Date();
+                  const yesterday = new Date();
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  if (msgDate.toDateString() === today.toDateString()) {
+                    dateLabel = 'Today';
+                  } else if (msgDate.toDateString() === yesterday.toDateString()) {
+                    dateLabel = 'Yesterday';
+                  } else {
+                    dateLabel = msgDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+                  }
+                }
+
+                return (
+                <div key={idx}>
+                {showDateSeparator && (
+                <div className="flex justify-center my-6">
+                  <div className="px-4 py-1 rounded-full bg-surface-container-low/50 backdrop-blur-sm">
+                    <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">{dateLabel}</span>
+                  </div>
                 </div>
-              </div>
-              {messages.map((msg, idx) => (
+                )}
+                {(
                 <motion.div 
                   key={idx}
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -466,7 +489,10 @@ export function ChatPage() {
                     {msg.time}
                   </span>
                 </motion.div>
-              ))}
+                )}
+                </div>
+                );
+              })}
               <div ref={messagesEndRef} />
             </>
           )}
