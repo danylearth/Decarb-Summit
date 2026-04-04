@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { Avatar, Button } from '../components/UI';
-import { ArrowLeft, Settings, MapPin, Briefcase, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter, Loader2 } from 'lucide-react';
+import { ArrowLeft, Settings, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -101,16 +101,7 @@ export function ProfilePage() {
             <h2 className="text-3xl font-black tracking-tighter text-white mb-1">{user.name}</h2>
             <p className="text-primary-accent font-bold uppercase tracking-widest text-xs mb-4">{user.role} @ {user.company}</p>
 
-            <div className="flex flex-wrap justify-center md:justify-start gap-4 text-on-surface-variant/60 text-[11px] font-bold uppercase tracking-widest mb-8">
-              <div className="flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5" />
-                <span>London, UK</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Briefcase className="w-3.5 h-3.5" />
-                <span>Full-time</span>
-              </div>
-            </div>
+            <div className="mb-8" />
 
             <div className="flex gap-3 w-full max-w-xs mx-auto md:mx-0">
               {!isOwnProfile ? (
