@@ -28,7 +28,7 @@
 - [x] **P1.11** Remove `MOCK_RESOURCES` fallback from ResourcesPage — show proper empty state with icon and descriptive message instead of falling back to mock data
 - [x] **P1.12** Fix ResourceDetailPage "Download PDF" button — removed non-functional button and unused `isReport` variable/`Download` import
 - [x] **P1.13** Fix ChatPage date separator hardcoded as "Today" — computes actual date from message timestamps, groups by day with "Today"/"Yesterday"/full date labels
-- [ ] **P1.14** Audit and fix empty/loading/error states across pages — several pages have no error handling for failed Firestore reads
+- [x] **P1.14** Audit and fix empty/loading/error states across pages — added ErrorBoundary component, try/catch on all Firestore reads, loading spinners, empty state messages, and error UI across all pages
 
 ---
 
@@ -38,7 +38,7 @@
 
 ### 2A: Foundation
 
-- [ ] **P2.1** Initialize Supabase project — `npx supabase init`, configure `config.toml` per specs/supabase-schema-migrations.md
+- [x] **P2.1** Initialize Supabase project — `npx supabase init`, configure `config.toml` per specs/supabase-schema-migrations.md
 - [ ] **P2.2** Create `src/lib/supabase.ts` — Supabase client initialization with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` per specs/supabase-client.md. Use PKCE flow, auto-refresh tokens
 - [ ] **P2.3** Generate database types — `npx supabase gen types typescript` → `src/lib/database.types.ts` per specs/supabase-client.md
 - [ ] **P2.4** Add env vars to `.env.local` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Add to Vercel via `vercel env` (use `vercel-plugin:env` skill)
