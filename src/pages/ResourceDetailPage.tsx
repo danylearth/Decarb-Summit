@@ -228,42 +228,9 @@ export function ResourceDetailPage() {
         </AnimatePresence>
 
         <article className="prose prose-invert prose-p:text-on-surface-variant prose-p:leading-relaxed prose-headings:font-black prose-headings:tracking-tight">
-          <p className="text-xl font-medium text-on-surface mb-8 leading-relaxed italic border-l-4 border-primary-accent pl-6 py-2">
-            Industrial decarbonization is no longer a choice but a strategic imperative. As global regulations tighten, the race to net-zero is being won by those who innovate at the intersection of technology and policy.
+          <p className="text-lg text-on-surface-variant leading-relaxed whitespace-pre-line">
+            {resource.description}
           </p>
-          
-          <h2 className="text-2xl mt-12 mb-6">The Current Landscape</h2>
-          <p className="mb-6">
-            The transition to a low-carbon economy requires a fundamental shift in how we produce and consume energy. For heavy industries like cement, steel, and chemicals, this means implementing Carbon Capture, Utilization, and Storage (CCUS) at scale.
-          </p>
-          
-          <Card className="my-10 bg-surface-container-low border-primary-accent/20">
-            <h3 className="text-primary-accent text-xs font-black uppercase tracking-widest mb-4">Key Takeaway</h3>
-            <p className="text-sm font-bold">
-              By 2030, CCUS capacity must increase by 20x to meet the Paris Agreement targets. This represents a $150B investment opportunity for early movers.
-            </p>
-          </Card>
-
-          <p className="mb-6">
-            Our latest research indicates that modular carbon capture units are becoming increasingly cost-effective for mid-sized industrial facilities. These "plug-and-play" solutions reduce capital expenditure by up to 30% compared to traditional bespoke installations.
-          </p>
-
-          <h2 className="text-2xl mt-12 mb-6">Strategic Recommendations</h2>
-          <ul className="space-y-4 list-none p-0">
-            {[
-              "Prioritize energy efficiency audits to reduce baseline emissions.",
-              "Explore regional hydrogen hubs for cross-industry collaboration.",
-              "Invest in digital twin technology for real-time emissions monitoring.",
-              "Secure long-term carbon storage agreements early to mitigate future supply risks."
-            ].map((item, i) => (
-              <li key={i} className="flex gap-4 items-start">
-                <div className="w-6 h-6 rounded-full bg-primary-accent/10 text-primary-accent flex items-center justify-center text-[10px] font-black shrink-0 mt-1">
-                  0{i + 1}
-                </div>
-                <span className="text-on-surface-variant">{item}</span>
-              </li>
-            ))}
-          </ul>
         </article>
 
         {/* Related Resources */}
