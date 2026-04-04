@@ -44,7 +44,7 @@
 - [x] **P2.3** Generate database types — `npx supabase gen types typescript` → `src/lib/database.types.ts` per specs/supabase-client.md
 - [x] **P2.4a** Add env vars to `.env.local` — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (done)
 - [x] **P2.4b** Start local Supabase — `supabase start` (requires Docker). Verify Studio at `:54323`, confirm auth providers (Google, LinkedIn OIDC, email/password, magic link) are visible. Prerequisite for all migration tasks
-- [ ] **P2.4c** Push env vars to Vercel — `vercel env` (use `vercel-plugin:env` skill). Defer until deploy phase if not needed locally
+- [x] **P2.4c** Push env vars to Vercel — `vercel env add` for `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (all envs), `SUPABASE_SERVICE_ROLE_KEY` (sensitive on prod/preview, regular on dev)
 
 ### 2B: Database Schema (migrations)
 
