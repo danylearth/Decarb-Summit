@@ -69,7 +69,7 @@
 - [x] **P2.13a** Migration verification — run `supabase db reset` to confirm all 9 migrations (1 utility + 8 tables) apply cleanly in order. Fix any FK ordering or syntax issues
 - [x] **P2.13b** Regenerate `database.types.ts` — `npx supabase gen types typescript --local > src/lib/database.types.ts`. Verify types are non-empty and match all 8 tables
 - [x] **P2.13c** Create `supabase/seed.sql` — must insert `auth.users` rows first (hardcoded UUIDs, runs as superuser), then profiles, then all dependent tables. Include 4+ profiles, 3+ posts with likes/comments, 3+ resources with saves, sample messages between users, sample connections. Run `supabase db reset` to verify seed applies after migrations. Per specs/supabase-schema-migrations.md
-- [ ] **P2.13d** Auth provider smoke test — with local Supabase running, verify in Studio (:54323) that Google, LinkedIn OIDC, email/password sign-up, and magic link are all configured and functional. Email testing via Inbucket (:54324)
+- [x] **P2.13d** Auth provider smoke test — with local Supabase running, verify in Studio (:54323) that Google, LinkedIn OIDC, email/password sign-up, and magic link are all configured and functional. Email testing via Inbucket (:54324)
 
 ### 2C: Storage Buckets
 
