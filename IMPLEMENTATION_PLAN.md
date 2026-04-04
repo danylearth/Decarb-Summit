@@ -93,7 +93,7 @@
 - [x] **P2.25** Migrate FeedPage comments — replace subcollection pattern with Supabase `post_comments` table queries, join `profiles` for author name/avatar
 - [x] **P2.26** Migrate FeedPage likes — replace Firestore `posts/{id}/likes` subcollection with Supabase `post_likes` table. Toggle: insert/delete row, update `posts.likes_count` via RPC or app-level increment
 - [x] **P2.27** Migrate FeedPage media uploads — replace Firebase Storage with Supabase Storage `post-media` bucket per specs/supabase-storage.md
-- [ ] **P2.28** Migrate ConnectionsPage — persist swipe actions to `connections` table (fixes unpersisted matches bug), query accepted connections for "Active Matches". Column names: `user_id`/`other_user_id`
+- [x] **P2.28** Migrate ConnectionsPage — persist swipe actions to `connections` table (fixes unpersisted matches bug), query accepted connections for "Active Matches". Column names: `user_id`/`other_user_id`
 - [ ] **P2.29** Migrate ChatPage — replace Firestore `messages` with Supabase `messages` table, proper query filtering (fixes inefficient all-messages fetch), real-time subscriptions. Use `is_read` for read receipts
 - [ ] **P2.30** Migrate ChatPage voice notes — replace Firebase Storage with Supabase Storage `voice-notes` bucket
 - [ ] **P2.31** Migrate ResourcesPage + ResourceDetailPage — replace Firestore reads with Supabase `resources` queries, replace `saved_resources` subcollection with Supabase `saved_resources` junction table
