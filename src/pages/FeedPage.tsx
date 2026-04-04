@@ -1,13 +1,58 @@
-import { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { db, storage, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, getDoc, doc, updateDoc, increment, setDoc, deleteDoc } from 'firebase/firestore';
+import { useState, useEffect, useRef, useCallback, ChangeEvent } from 'react';
+import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { supabase } from '../lib/supabase';
 import { useUser } from '../context/UserContext';
 import { Post, User, Comment } from '../types';
 import { Avatar, Card, Button } from '../components/UI';
-import { Heart, MessageCircle, Share2, MoreHorizontal, Plus, X, Image as ImageIcon, Video, Upload, Loader2, Send, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Plus, X, Image as ImageIcon, Loader2, Send, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-// Mock data removed - all data comes from Firestore
+
+// Shape returned by Supabase posts query with joined profiles
+type PostRow = {
+  id: string;
+  author_id: string;
+  content: string;
+  media_url: string | null;
+  media_type: string | null;
+  likes_count: number | null;
+  comments_count: number | null;
+  is_sponsored: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+  profiles: {
+    id: string;
+    name: string;
+    handle: string;
+    role: string;
+    company: string | null;
+    avatar_url: string | null;
+  };
+};
+
+function mapPostRow(row: PostRow): Post & { author: User } {
+  const p = row.profiles;
+  return {
+    id: row.id,
+    content: row.content,
+    media: row.media_url || undefined,
+    mediaType: (row.media_type as 'image' | 'video') || undefined,
+    likes: row.likes_count ?? 0,
+    comments: row.comments_count ?? 0,
+    timestamp: row.created_at ? new Date(row.created_at).toLocaleString() : 'Just now',
+    isSponsored: row.is_sponsored ?? false,
+    author: {
+      id: p.id,
+      name: p.name,
+      handle: p.handle,
+      role: p.role,
+      company: p.company || '',
+      avatar: p.avatar_url || `https://picsum.photos/seed/${p.id}/100/100`,
+    } as User,
+  };
+}
+
+const POST_SELECT = `*, profiles!author_id (id, name, handle, role, company, avatar_url)`;
 
 export function FeedPage() {
   const { user } = useUser();
@@ -26,179 +71,274 @@ export function FeedPage() {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
 
-  useEffect(() => {
-    const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'));
+  // ── Fetch posts + real-time subscription ───────────────────────────
+  const fetchPosts = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('posts')
+      .select(POST_SELECT)
+      .order('created_at', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      if (snapshot.empty) {
-        setPosts([]);
-        setLoadingPosts(false);
-        return;
-      }
-
-      const postsData = await Promise.all(snapshot.docs.map(async (postDoc) => {
-        const data = postDoc.data();
-        // Fetch author details
-        const authorRef = doc(db, 'users', data.authorId);
-        const authorSnap = await getDoc(authorRef);
-        const authorData = authorSnap.exists() ? authorSnap.data() as User : {
-          id: data.authorId,
-          name: 'Unknown User',
-          handle: 'unknown',
-          role: '',
-          company: '',
-          avatar: `https://picsum.photos/seed/${data.authorId}/100/100`
-        } as User;
-
-        return {
-          id: postDoc.id,
-          ...data,
-          author: authorData,
-          timestamp: data.timestamp?.toDate?.()?.toLocaleString() || 'Just now'
-        } as Post & { author: User };
-      }));
-      setPosts(postsData);
-      setLoadingPosts(false);
-      setPostsError(null);
-    }, (err) => {
+    if (error) {
       setPostsError('Failed to load posts. Please try again.');
-      setLoadingPosts(false);
-      handleFirestoreError(err, OperationType.LIST, 'posts');
-    });
-
-    return () => unsubscribe();
+      console.error('Posts fetch error:', error);
+    } else {
+      setPosts((data as PostRow[]).map(mapPostRow));
+      setPostsError(null);
+    }
+    setLoadingPosts(false);
   }, []);
 
   useEffect(() => {
+    fetchPosts();
+
+    const channel = supabase
+      .channel('posts-feed')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'posts' },
+        async (payload) => {
+          // Fetch the new post with author join
+          const { data } = await supabase
+            .from('posts')
+            .select(POST_SELECT)
+            .eq('id', payload.new.id)
+            .single();
+          if (data) {
+            setPosts((prev) => [mapPostRow(data as PostRow), ...prev]);
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'posts' },
+        (payload) => {
+          const updated = payload.new as { id: string; likes_count: number; comments_count: number; content: string; media_url: string | null; media_type: string | null };
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === updated.id
+                ? {
+                    ...p,
+                    likes: updated.likes_count ?? p.likes,
+                    comments: updated.comments_count ?? p.comments,
+                    content: updated.content ?? p.content,
+                    media: updated.media_url || p.media,
+                    mediaType: (updated.media_type as 'image' | 'video') || p.mediaType,
+                  }
+                : p,
+            ),
+          );
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'posts' },
+        (payload) => {
+          setPosts((prev) => prev.filter((p) => p.id !== (payload.old as { id: string }).id));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchPosts]);
+
+  // ── Fetch current user's likes ─────────────────────────────────────
+  useEffect(() => {
     if (!user || posts.length === 0) return;
-    
+
     const fetchLikes = async () => {
-      const liked = new Set<string>();
-      await Promise.all(posts.map(async (post) => {
-        const likeRef = doc(db, 'posts', post.id, 'likes', user.id);
-        const likeSnap = await getDoc(likeRef);
-        if (likeSnap.exists()) {
-          liked.add(post.id);
-        }
-      }));
-      setLikedPosts(liked);
+      const { data } = await supabase
+        .from('post_likes')
+        .select('post_id')
+        .eq('user_id', user.id);
+      if (data) {
+        setLikedPosts(new Set(data.map((row) => row.post_id)));
+      }
     };
 
     fetchLikes();
   }, [user?.id, posts.length]);
 
+  // ── Fetch comments + real-time when a post is expanded ─────────────
   useEffect(() => {
     if (!expandedPostId) {
       setComments([]);
       return;
     }
 
-    const q = query(
-      collection(db, 'posts', expandedPostId, 'comments'),
-      orderBy('timestamp', 'desc')
-    );
+    const fetchComments = async () => {
+      const { data, error } = await supabase
+        .from('post_comments')
+        .select('*, profiles!author_id (name, avatar_url)')
+        .eq('post_id', expandedPostId)
+        .order('created_at', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const commentsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate?.()?.toLocaleString() || 'Just now'
-      } as Comment));
-      setComments(commentsData);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, `posts/${expandedPostId}/comments`);
-    });
+      if (!error && data) {
+        setComments(
+          data.map((row) => ({
+            id: row.id,
+            authorId: row.author_id,
+            authorName: (row.profiles as { name: string; avatar_url: string | null }).name,
+            authorAvatar: (row.profiles as { name: string; avatar_url: string | null }).avatar_url || '',
+            content: row.content,
+            timestamp: row.created_at ? new Date(row.created_at).toLocaleString() : 'Just now',
+            isEdited: row.is_edited ?? false,
+          })),
+        );
+      }
+    };
 
-    return () => unsubscribe();
+    fetchComments();
+
+    const channel = supabase
+      .channel(`comments-${expandedPostId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'post_comments', filter: `post_id=eq.${expandedPostId}` },
+        () => {
+          // Refetch all comments for this post on any change (simpler than partial merge)
+          fetchComments();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [expandedPostId]);
 
+  // ── Like toggle ────────────────────────────────────────────────────
   const handleLike = async (postId: string) => {
     if (!user) return;
     const isLiked = likedPosts.has(postId);
-    
+    const currentPost = posts.find((p) => p.id === postId);
+    if (!currentPost) return;
+
     // Optimistic update
-    const newLikedPosts = new Set(likedPosts);
+    const prevLiked = new Set(likedPosts);
+    const newLiked = new Set(likedPosts);
     if (isLiked) {
-      newLikedPosts.delete(postId);
+      newLiked.delete(postId);
     } else {
-      newLikedPosts.add(postId);
+      newLiked.add(postId);
     }
-    setLikedPosts(newLikedPosts);
+    setLikedPosts(newLiked);
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId ? { ...p, likes: p.likes + (isLiked ? -1 : 1) } : p,
+      ),
+    );
 
     try {
-      const postRef = doc(db, 'posts', postId);
-      const likeRef = doc(db, 'posts', postId, 'likes', user.id);
-
       if (isLiked) {
-        await deleteDoc(likeRef);
-        await updateDoc(postRef, { likes: increment(-1) });
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', user.id);
+        if (error) throw error;
+
+        await supabase
+          .from('posts')
+          .update({ likes_count: Math.max((currentPost.likes ?? 0) - 1, 0) })
+          .eq('id', postId);
       } else {
-        await setDoc(likeRef, { userId: user.id, timestamp: serverTimestamp() });
-        await updateDoc(postRef, { likes: increment(1) });
+        const { error } = await supabase
+          .from('post_likes')
+          .insert({ post_id: postId, user_id: user.id });
+        if (error) throw error;
+
+        await supabase
+          .from('posts')
+          .update({ likes_count: (currentPost.likes ?? 0) + 1 })
+          .eq('id', postId);
       }
     } catch (err) {
       // Rollback
-      setLikedPosts(likedPosts);
-      handleFirestoreError(err, OperationType.UPDATE, `posts/${postId}/likes`);
+      setLikedPosts(prevLiked);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, likes: currentPost.likes } : p,
+        ),
+      );
+      console.error('Like toggle error:', err);
     }
   };
 
+  // ── Add comment ────────────────────────────────────────────────────
   const handleAddComment = async (postId: string) => {
     if (!user || !newComment.trim()) return;
     setIsSubmittingComment(true);
 
     try {
-      const postRef = doc(db, 'posts', postId);
-      const commentsRef = collection(db, 'posts', postId, 'comments');
-
-      await addDoc(commentsRef, {
-        authorId: user.id,
-        authorName: user.name,
-        authorAvatar: user.avatar,
+      const { error } = await supabase.from('post_comments').insert({
+        post_id: postId,
+        author_id: user.id,
         content: newComment,
-        timestamp: serverTimestamp()
       });
+      if (error) throw error;
 
-      await updateDoc(postRef, { comments: increment(1) });
+      // Update comments count on the post
+      const currentPost = posts.find((p) => p.id === postId);
+      if (currentPost) {
+        await supabase
+          .from('posts')
+          .update({ comments_count: (currentPost.comments ?? 0) + 1 })
+          .eq('id', postId);
+      }
+
       setNewComment('');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `posts/${postId}/comments`);
+      console.error('Add comment error:', err);
     } finally {
       setIsSubmittingComment(false);
     }
   };
 
+  // ── Delete comment ─────────────────────────────────────────────────
   const handleDeleteComment = async (postId: string, commentId: string) => {
     if (!user) return;
     try {
-      const postRef = doc(db, 'posts', postId);
-      const commentRef = doc(db, 'posts', postId, 'comments', commentId);
-      await deleteDoc(commentRef);
-      await updateDoc(postRef, { comments: increment(-1) });
+      const { error } = await supabase
+        .from('post_comments')
+        .delete()
+        .eq('id', commentId);
+      if (error) throw error;
+
+      const currentPost = posts.find((p) => p.id === postId);
+      if (currentPost) {
+        await supabase
+          .from('posts')
+          .update({ comments_count: Math.max((currentPost.comments ?? 0) - 1, 0) })
+          .eq('id', postId);
+      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `posts/${postId}/comments/${commentId}`);
+      console.error('Delete comment error:', err);
     }
   };
 
-  const handleUpdateComment = async (postId: string, commentId: string) => {
+  // ── Update comment ─────────────────────────────────────────────────
+  const handleUpdateComment = async (_postId: string, commentId: string) => {
     if (!user || !editingCommentContent.trim()) return;
     setIsSubmittingComment(true);
     try {
-      const commentRef = doc(db, 'posts', postId, 'comments', commentId);
-      await updateDoc(commentRef, {
-        content: editingCommentContent,
-        isEdited: true,
-        updatedAt: serverTimestamp()
-      });
+      const { error } = await supabase
+        .from('post_comments')
+        .update({ content: editingCommentContent, is_edited: true })
+        .eq('id', commentId);
+      if (error) throw error;
+
       setEditingCommentId(null);
       setEditingCommentContent('');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `posts/${postId}/comments/${commentId}`);
+      console.error('Update comment error:', err);
     } finally {
       setIsSubmittingComment(false);
     }
   };
 
+  // ── Share ──────────────────────────────────────────────────────────
   const handleShare = async (post: Post & { author: User }) => {
     const shareData = {
       title: `Decarb Connect: Post by ${post.author.name}`,
@@ -215,7 +355,6 @@ export function FeedPage() {
         }
       }
     } else {
-      // Fallback: Copy to clipboard
       try {
         await navigator.clipboard.writeText(shareData.url);
         setShowShareToast(true);
@@ -226,9 +365,9 @@ export function FeedPage() {
     }
   };
 
+  // ── File upload state (media upload stays on Firebase Storage — migrated in P2.27) ──
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
@@ -243,15 +382,16 @@ export function FeedPage() {
     }
   };
 
+  // ── Create post ────────────────────────────────────────────────────
   const handleCreatePost = async () => {
     if (!user || (!newPostContent.trim() && !selectedFile)) return;
     setIsSubmitting(true);
-    setUploadProgress(0);
-    
-    try {
-      let mediaUrl = '';
-      let mediaType: 'image' | 'video' = 'image';
 
+    try {
+      let mediaUrl: string | null = null;
+      let mediaType: 'image' | 'video' | null = null;
+
+      // Media upload still uses Firebase Storage (P2.27 will migrate to Supabase Storage)
       if (selectedFile) {
         const fileRef = ref(storage, `posts/${user.id}/${Date.now()}_${selectedFile.name}`);
         const uploadResult = await uploadBytes(fileRef, selectedFile);
@@ -259,30 +399,27 @@ export function FeedPage() {
         mediaType = selectedFile.type.startsWith('video') ? 'video' : 'image';
       }
 
-      await addDoc(collection(db, 'posts'), {
-        authorId: user.id,
+      const { error } = await supabase.from('posts').insert({
+        author_id: user.id,
         content: newPostContent,
-        likes: 0,
-        comments: 0,
-        timestamp: serverTimestamp(),
-        media: mediaUrl || '',
-        mediaType: mediaType
+        media_url: mediaUrl,
+        media_type: mediaType,
       });
+      if (error) throw error;
 
       setNewPostContent('');
       setSelectedFile(null);
       setFilePreview(null);
       setIsCreateModalOpen(false);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'posts');
+      console.error('Create post error:', err);
     } finally {
       setIsSubmitting(false);
-      setUploadProgress(0);
     }
   };
 
   return (
-    <motion.main 
+    <motion.main
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="max-w-4xl mx-auto px-6 pt-12 pb-32 relative"
@@ -332,19 +469,19 @@ export function FeedPage() {
                 </div>
               </div>
             </div>
-            
+
             {post.media && (
               <div className="relative w-full aspect-[4/3] bg-surface-container-highest">
                 {post.mediaType === 'video' ? (
-                  <video 
-                    src={post.media} 
-                    controls 
+                  <video
+                    src={post.media}
+                    controls
                     className="w-full h-full object-contain"
                   />
                 ) : (
-                  <img 
-                    src={post.media} 
-                    alt="Post content" 
+                  <img
+                    src={post.media}
+                    alt="Post content"
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
@@ -358,21 +495,21 @@ export function FeedPage() {
               </p>
               <div className="flex items-center justify-between mt-6">
                 <div className="flex items-center gap-4">
-                  <button 
+                  <button
                     onClick={() => handleLike(post.id)}
                     className={`flex items-center gap-1.5 transition-colors ${likedPosts.has(post.id) ? 'text-primary-accent' : 'text-on-surface-variant hover:text-on-surface'}`}
                   >
                     <Heart className={`w-5 h-5 ${likedPosts.has(post.id) ? 'fill-current' : ''}`} />
                     <span className="text-xs font-bold">{post.likes}</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
                     className={`flex items-center gap-1.5 transition-colors ${expandedPostId === post.id ? 'text-primary-accent' : 'text-on-surface-variant hover:text-on-surface'}`}
                   >
                     <MessageCircle className="w-5 h-5" />
                     <span className="text-xs font-bold">{post.comments}</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleShare(post)}
                     className="flex items-center gap-1.5 text-on-surface-variant hover:text-on-surface transition-colors"
                   >
@@ -384,7 +521,7 @@ export function FeedPage() {
               {/* Inline Comments Section */}
               <AnimatePresence>
                 {expandedPostId === post.id && (
-                  <motion.div 
+                  <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
@@ -395,7 +532,7 @@ export function FeedPage() {
                       <div className="flex items-center gap-3">
                         <Avatar src={user?.avatar || ''} alt={user?.name || ''} size="xs" />
                         <div className="flex-1 relative">
-                          <input 
+                          <input
                             type="text"
                             value={newComment}
                             onChange={(e) => setNewComment(e.target.value)}
@@ -403,7 +540,7 @@ export function FeedPage() {
                             placeholder="Add a comment..."
                             className="w-full bg-surface-container rounded-full py-2 px-4 pr-10 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:ring-1 focus:ring-primary-accent outline-none transition-all"
                           />
-                          <button 
+                          <button
                             onClick={() => handleAddComment(post.id)}
                             disabled={isSubmittingComment || !newComment.trim()}
                             className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-primary-accent disabled:opacity-30 transition-opacity"
@@ -429,13 +566,13 @@ export function FeedPage() {
                                     autoFocus
                                   />
                                   <div className="flex justify-end gap-2">
-                                    <button 
+                                    <button
                                       onClick={() => setEditingCommentId(null)}
                                       className="text-[10px] font-bold text-on-surface-variant hover:text-white transition-colors"
                                     >
                                       Cancel
                                     </button>
-                                    <button 
+                                    <button
                                       onClick={() => handleUpdateComment(post.id, comment.id)}
                                       disabled={isSubmittingComment || !editingCommentContent.trim()}
                                       className="text-[10px] font-bold text-primary-accent hover:text-primary-accent/80 disabled:opacity-50 transition-colors"
@@ -451,7 +588,7 @@ export function FeedPage() {
                                       <h5 className="text-[10px] font-bold text-white truncate">{comment.authorName}</h5>
                                       {comment.authorId === user?.id && (
                                         <div className="flex items-center gap-1.5 opacity-0 group-hover/comment:opacity-100 transition-opacity">
-                                          <button 
+                                          <button
                                             onClick={() => {
                                               setEditingCommentId(comment.id);
                                               setEditingCommentContent(comment.content);
@@ -461,7 +598,7 @@ export function FeedPage() {
                                           >
                                             <Pencil className="w-3 h-3" />
                                           </button>
-                                          <button 
+                                          <button
                                             onClick={() => handleDeleteComment(post.id, comment.id)}
                                             className="p-1 text-on-surface-variant hover:text-red-400 transition-colors"
                                             title="Delete comment"
@@ -536,14 +673,14 @@ export function FeedPage() {
       <AnimatePresence>
         {isCreateModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsCreateModalOpen(false)}
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -554,19 +691,19 @@ export function FeedPage() {
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary-accent mb-1">New Post</span>
                   <h3 className="text-2xl font-extrabold tracking-tighter text-white">Share Insight</h3>
                 </div>
-                <button 
-                  onClick={() => setIsCreateModalOpen(false)} 
+                <button
+                  onClick={() => setIsCreateModalOpen(false)}
                   className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-on-surface-variant hover:bg-white/10 hover:text-white transition-all active:scale-90"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              
+
               <div className="px-8 pb-8">
                 <div className="flex gap-4 mt-6">
                   <Avatar src={user?.avatar || ''} alt={user?.name || ''} size="md" className="shrink-0" />
                   <div className="flex-1">
-                    <textarea 
+                    <textarea
                       value={newPostContent}
                       onChange={(e) => setNewPostContent(e.target.value)}
                       placeholder="What's happening in decarbonization?"
@@ -574,7 +711,7 @@ export function FeedPage() {
                     />
                   </div>
                 </div>
-                
+
                 {filePreview ? (
                   <div className="relative mt-4 rounded-2xl overflow-hidden aspect-video bg-surface-container-highest border border-white/10 group">
                     {selectedFile?.type.startsWith('video') ? (
@@ -583,7 +720,7 @@ export function FeedPage() {
                       <img src={filePreview} className="w-full h-full object-cover" />
                     )}
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <button 
+                      <button
                         onClick={() => {
                           setSelectedFile(null);
                           setFilePreview(null);
@@ -596,7 +733,7 @@ export function FeedPage() {
                   </div>
                 ) : (
                   <div className="mt-4">
-                    <button 
+                    <button
                       onClick={() => fileInputRef.current?.click()}
                       className="w-full flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-dashed border-white/10 hover:border-primary-accent/50 hover:bg-primary-accent/5 transition-all group"
                     >
@@ -607,8 +744,8 @@ export function FeedPage() {
                         <p className="text-sm font-bold text-white">Add media</p>
                         <p className="text-[10px] font-medium text-on-surface-variant/60 uppercase tracking-wider">Images or video up to 10MB</p>
                       </div>
-                      <input 
-                        type="file" 
+                      <input
+                        type="file"
                         ref={fileInputRef}
                         onChange={handleFileSelect}
                         accept="image/*,video/*"
@@ -619,7 +756,7 @@ export function FeedPage() {
                 )}
 
                 <div className="mt-10 pt-6 border-t border-white/5">
-                  <Button 
+                  <Button
                     onClick={handleCreatePost}
                     disabled={isSubmitting || (!newPostContent.trim() && !selectedFile)}
                     className="w-full rounded-2xl py-5 h-auto text-base font-black uppercase tracking-[0.1em]"
@@ -641,7 +778,7 @@ export function FeedPage() {
       {/* Share Toast */}
       <AnimatePresence>
         {showShareToast && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
