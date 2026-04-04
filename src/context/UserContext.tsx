@@ -10,6 +10,7 @@ interface UserContextType {
   user: User | null;
   loading: boolean;
   signIn: () => Promise<void>;
+  signInWithLinkedIn: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   membership: {
@@ -163,7 +164,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const meta = authUser.user_metadata ?? {};
     const newProfile = {
       id: authUser.id,
-      name: meta.full_name || meta.name || 'New User',
+      name: meta.full_name || meta.name || (meta.given_name && meta.family_name ? `${meta.given_name} ${meta.family_name}` : meta.given_name) || 'New User',
       handle: authUser.email?.split('@')[0] || 'user',
       role: 'Community Member',
       company: '',
@@ -266,6 +267,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('Sign in error:', error);
+    }
+  };
+
+  const signInWithLinkedIn = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'linkedin_oidc',
+      });
+      if (error) {
+        console.error('LinkedIn sign in error:', error.message);
+      }
+    } catch (error) {
+      console.error('LinkedIn sign in error:', error);
     }
   };
 
@@ -385,6 +399,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       user,
       loading,
       signIn,
+      signInWithLinkedIn,
       signOut,
       updateUser,
       membership,
