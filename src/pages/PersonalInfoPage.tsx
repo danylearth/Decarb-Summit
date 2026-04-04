@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
+import { auth } from '../firebase';
 import { Button, Card } from '../components/UI';
 import { ArrowLeft, Save, User, Mail, Briefcase, Building2, AlignLeft, Linkedin, Twitter } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -10,7 +11,7 @@ export function PersonalInfoPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: user?.name || '',
-    email: 'alex.sterling@decarb.global', // Mock email
+    email: auth.currentUser?.email || '',
     role: user?.role || '',
     company: user?.company || '',
     avatar: user?.avatar || '',
