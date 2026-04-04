@@ -25,6 +25,22 @@ create table public.profiles (
   primary key (id)
 );
 
+-- Helper function: returns true if the current authenticated user is an admin.
+-- Defined here (not in utility_functions) because it queries the profiles table.
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = (select auth.uid())
+      and is_admin = true
+  );
+$$;
+
 -- Auto-update updated_at on every UPDATE
 create trigger profiles_set_updated_at
   before update on public.profiles
