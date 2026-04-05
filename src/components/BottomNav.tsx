@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Layers, Library, Network, User } from 'lucide-react';
+import { Layers, Library, Network, User, CalendarDays } from 'lucide-react';
 import { cn } from '../components/UI';
 import { useUser } from '../context/UserContext';
 
@@ -15,7 +15,7 @@ export function BottomNav() {
 
   const navItems = [
     { to: '/feed', icon: Layers, label: 'Feed' },
-    { to: '/resources', icon: Library, label: 'Resources' },
+    { to: '/schedule', icon: CalendarDays, label: 'Schedule' },
     { 
       to: '/connections', 
       icon: Network, 

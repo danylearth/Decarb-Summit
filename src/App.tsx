@@ -18,6 +18,8 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { UserProvider, useUser } from './context/UserContext';
 import { ResourceDetailPage } from './pages/ResourceDetailPage';
+import { SchedulePage } from './pages/SchedulePage';
+import { SessionDetailPage } from './pages/SessionDetailPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/UI';
 import { ArrowRight, Linkedin, Mail, Loader2 } from 'lucide-react';
@@ -385,6 +387,8 @@ function AppContent() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/connections" replace />} />
         <Route path="/feed" element={<FeedPage />} />
+        <Route path="/schedule" element={<SchedulePage />} />
+        <Route path="/schedule/:sessionId" element={<SessionDetailPage />} />
         <Route path="/resources" element={<ResourcesPage />} />
         <Route path="/resources/:id" element={<ResourceDetailPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />

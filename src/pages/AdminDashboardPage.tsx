@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../components/UI';
 import { motion } from 'motion/react';
 import { ArrowLeft, Users, FileText, BookOpen, BarChart, AlertTriangle } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, getDocs, deleteDoc, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 
 export function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -17,20 +16,20 @@ export function AdminDashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        const postsSnap = await getDocs(collection(db, 'posts'));
-        const resourcesSnap = await getDocs(collection(db, 'resources'));
+        const [usersRes, postsRes, resourcesRes] = await Promise.all([
+          supabase.from('profiles').select('*'),
+          supabase.from('posts').select('*'),
+          supabase.from('resources').select('*'),
+        ]);
 
         setData({
-          users: usersSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-          posts: postsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-          resources: resourcesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+          users: usersRes.data ?? [],
+          posts: postsRes.data ?? [],
+          resources: resourcesRes.data ?? [],
         });
       } catch (err) {
         setError('Failed to load dashboard data.');
-        setLoading(false);
-        handleFirestoreError(err, OperationType.LIST, 'admin_dashboard');
-        return;
+        console.error('Admin fetch error:', err);
       } finally {
         setLoading(false);
       }
@@ -40,15 +39,17 @@ export function AdminDashboardPage() {
 
   const handleDelete = async (collectionName: string, id: string) => {
     if (!confirm('Are you sure?')) return;
+    const table = collectionName === 'users' ? 'profiles' as const : collectionName as 'posts' | 'resources';
     try {
-      await deleteDoc(doc(db, collectionName, id));
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
       setData((prev: any) => ({
         ...prev,
         [collectionName]: prev[collectionName].filter((item: any) => item.id !== id)
       }));
     } catch (err) {
       setActionError('Failed to delete item. Please try again.');
-      handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${id}`);
+      console.error('Admin delete error:', err);
     }
   };
 
@@ -59,18 +60,23 @@ export function AdminDashboardPage() {
   const handleSave = async () => {
     try {
       if (editingUser) {
-        await updateDoc(doc(db, 'users', editingUser.id), formData);
+        const { error } = await supabase.from('profiles').update(formData).eq('id', editingUser.id);
+        if (error) throw error;
         setData((prev: any) => ({
           ...prev,
           users: prev.users.map((u: any) => u.id === editingUser.id ? { ...u, ...formData } : u)
         }));
       } else {
-        // Simple create - note: this doesn't create an Auth user
-        const newUserRef = doc(collection(db, 'users'));
-        await setDoc(newUserRef, formData);
+        // Admin create — inserts into profiles (no auth user created)
+        const { data: newUser, error } = await supabase.from('profiles').insert({
+          id: crypto.randomUUID(),
+          handle: formData.email?.split('@')[0] || formData.name.toLowerCase().replace(/\s+/g, ''),
+          ...formData,
+        }).select().single();
+        if (error) throw error;
         setData((prev: any) => ({
           ...prev,
-          users: [...prev.users, { id: newUserRef.id, ...formData }]
+          users: [...prev.users, newUser]
         }));
       }
       setEditingUser(null);
@@ -78,7 +84,7 @@ export function AdminDashboardPage() {
       setFormData({ name: '', email: '', role: '' });
     } catch (err) {
       setActionError('Failed to save user. Please try again.');
-      handleFirestoreError(err, OperationType.WRITE, 'users');
+      console.error('Admin save error:', err);
     }
   };
 

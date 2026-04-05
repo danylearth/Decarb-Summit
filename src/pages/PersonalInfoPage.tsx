@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { auth } from '../firebase';
+import { supabase } from '../lib/supabase';
 import { Button, Card } from '../components/UI';
 import { ArrowLeft, Save, User, Mail, Briefcase, Building2, AlignLeft, Linkedin, Twitter, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -11,7 +11,7 @@ export function PersonalInfoPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: user?.name || '',
-    email: auth.currentUser?.email || '',
+    email: '',
     role: user?.role || '',
     company: user?.company || '',
     avatar: user?.avatar || '',
@@ -19,6 +19,15 @@ export function PersonalInfoPage() {
     linkedin: user?.linkedin || '',
     twitter: user?.twitter || '',
   });
+  // Fetch email from Supabase auth session
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) {
+        setFormData(prev => ({ ...prev, email: data.user!.email! }));
+      }
+    });
+  }, []);
+
   const [isAvatarSaving, setIsAvatarSaving] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, getDoc, collection, query, limit, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { Resource } from '../types';
 import { Button, Card, cn } from '../components/UI';
 import { ArrowLeft, Play, Share2, Clock, Calendar, User, Bookmark, ChevronRight, Check, AlertTriangle } from 'lucide-react';
@@ -21,67 +20,63 @@ export function ResourceDetailPage() {
 
   useEffect(() => {
     if (!id || !user) return;
-    
+
     // Scroll to top when ID changes
     window.scrollTo(0, 0);
 
     const fetchResource = async () => {
       try {
-        const docRef = doc(db, 'resources', id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setResource({ id: docSnap.id, ...docSnap.data() } as Resource);
-        }
+        const { data, error: fetchError } = await supabase
+          .from('resources')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (fetchError) throw fetchError;
+        if (data) setResource(data as Resource);
       } catch (err) {
         setError('Failed to load resource. Please try again.');
-        setLoading(false);
-        handleFirestoreError(err, OperationType.GET, `resources/${id}`);
-        return;
+        console.error('Resource fetch error:', err);
       }
       setLoading(false);
     };
 
-    fetchResource();
-
-    // Check if saved
-    const savedRef = doc(db, 'users', user.id, 'saved_resources', id);
-    const unsubSaved = onSnapshot(savedRef, (doc) => {
-      setIsSaved(doc.exists());
-    }, () => {
-      // Non-critical: silently fail save status check
-    });
-
-    // Fetch related
-    const q = query(collection(db, 'resources'), limit(3));
-    const unsubRelated = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs
-        .map(d => ({ id: d.id, ...d.data() } as Resource))
-        .filter(r => r.id !== id);
-      setRelated(data);
-    }, () => {
-      // Non-critical: silently fail related resources
-    });
-
-    return () => {
-      unsubSaved();
-      unsubRelated();
+    const checkSaved = async () => {
+      const { data } = await supabase
+        .from('saved_resources')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .eq('resource_id', id)
+        .maybeSingle();
+      setIsSaved(!!data);
     };
+
+    const fetchRelated = async () => {
+      const { data } = await supabase
+        .from('resources')
+        .select('*')
+        .neq('id', id)
+        .limit(3);
+      if (data) setRelated(data as Resource[]);
+    };
+
+    fetchResource();
+    checkSaved();
+    fetchRelated();
   }, [id, user]);
 
   const handleSave = async () => {
     if (!user || !id) return;
     try {
-      const savedRef = doc(db, 'users', user.id, 'saved_resources', id);
       if (isSaved) {
-        await deleteDoc(savedRef);
+        await supabase.from('saved_resources').delete().eq('user_id', user.id).eq('resource_id', id);
+        setIsSaved(false);
       } else {
-        await setDoc(savedRef, {
-          resourceId: id,
-          savedAt: serverTimestamp()
-        });
+        await supabase.from('saved_resources').insert({ user_id: user.id, resource_id: id });
+        setIsSaved(true);
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${user.id}/saved_resources/${id}`);
+      console.error('Save toggle error:', err);
     }
   };
 

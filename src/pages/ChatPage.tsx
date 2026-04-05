@@ -1,12 +1,11 @@
-import { useState, useRef, ChangeEvent, useEffect } from 'react';
+import { useState, useRef, ChangeEvent, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-// Real user data fetched from Firestore
 import { Avatar, Button } from '../components/UI';
-import { ArrowLeft, Info, Plus, Mic, Send, FileText, X, Paperclip, Play, Pause, Square, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Info, Plus, Mic, Send, FileText, X, Paperclip, Play, Pause, Square, Loader2, AlertTriangle, Check, CheckCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, storage, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, Timestamp, limit, doc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { supabase } from '../lib/supabase';
+import type { Json } from '../lib/database.types';
+import { useUser } from '../context/UserContext';
 import { User } from '../types';
 
 interface Attachment {
@@ -22,38 +21,99 @@ interface VoiceNote {
 }
 
 interface Message {
-  id?: string;
-  text?: string;
+  id: string;
+  content: string | null;
   sender: 'me' | 'them';
   senderId: string;
   receiverId: string;
   time: string;
-  timestamp?: any;
-  attachments?: Attachment[];
+  createdAt: string | null;
+  isRead: boolean;
+  attachments: Attachment[];
+  voiceNoteUrl: string | null;
+  voiceNoteDuration: string | null;
   voiceNote?: VoiceNote;
-  voiceNoteUrl?: string;
-  voiceNoteDuration?: string;
+}
+
+// Shape returned by Supabase profiles query
+type ProfileRow = {
+  id: string;
+  name: string;
+  handle: string;
+  role: string;
+  company: string | null;
+  avatar_url: string | null;
+  is_online: boolean | null;
+};
+
+function mapProfileToUser(p: ProfileRow): User {
+  return {
+    id: p.id,
+    name: p.name,
+    handle: p.handle,
+    role: p.role,
+    company: p.company || '',
+    avatar: p.avatar_url || `https://picsum.photos/seed/${p.id}/200/200`,
+    isOnline: p.is_online ?? false,
+    tags: [],
+  };
+}
+
+type MessageRow = {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string | null;
+  is_read: boolean | null;
+  created_at: string | null;
+  voice_note_url: string | null;
+  voice_note_duration: string | null;
+  attachments: Attachment[] | null;
+};
+
+function mapMessageRow(row: MessageRow, currentUserId: string): Message {
+  return {
+    id: row.id,
+    content: row.content,
+    sender: row.sender_id === currentUserId ? 'me' : 'them',
+    senderId: row.sender_id,
+    receiverId: row.receiver_id,
+    time: row.created_at
+      ? new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : 'Just now',
+    createdAt: row.created_at,
+    isRead: row.is_read ?? false,
+    attachments: (row.attachments as Attachment[]) ?? [],
+    voiceNoteUrl: row.voice_note_url,
+    voiceNoteDuration: row.voice_note_duration,
+  };
 }
 
 export function ChatPage() {
   const { userId } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useUser();
   const [chatPartner, setChatPartner] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
 
-  // Fetch real user data from Firestore
+  // Fetch chat partner profile from Supabase
   useEffect(() => {
     if (!userId) return;
     const fetchUser = async () => {
       try {
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        if (userDoc.exists()) {
-          setChatPartner({ id: userDoc.id, ...userDoc.data() } as User);
-        } else {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, name, handle, role, company, avatar_url, is_online')
+          .eq('id', userId)
+          .single();
+
+        if (error || !data) {
           setChatPartner({ id: userId, name: 'Unknown User', handle: 'unknown', role: '', company: '', avatar: `https://picsum.photos/seed/${userId}/200/200`, tags: [] } as User);
+        } else {
+          setChatPartner(mapProfileToUser(data as ProfileRow));
         }
       } catch {
         setChatPartner({ id: userId, name: 'Unknown User', handle: 'unknown', role: '', company: '', avatar: `https://picsum.photos/seed/${userId}/200/200`, tags: [] } as User);
@@ -62,46 +122,115 @@ export function ChatPage() {
     fetchUser();
   }, [userId]);
 
-  useEffect(() => {
-    if (!auth.currentUser || !userId) return;
+  // Fetch messages for this specific conversation (proper filtering — not all messages)
+  const fetchMessages = useCallback(async () => {
+    if (!currentUser?.id || !userId) return;
 
-    const messagesRef = collection(db, 'messages');
-    
-    // Query for messages where current user is a participant
-    const q = query(
-      messagesRef,
-      where('participants', 'array-contains', auth.currentUser.uid),
-      orderBy('timestamp', 'asc')
-    );
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, sender_id, receiver_id, content, is_read, created_at, voice_note_url, voice_note_duration, attachments')
+      .or(
+        `and(sender_id.eq.${currentUser.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${currentUser.id})`
+      )
+      .order('created_at', { ascending: true });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allMessages = snapshot.docs
-        .map(doc => {
-          const data = doc.data();
-          // Filter for the specific conversation with userId
-          if (data.participants?.includes(userId)) {
-            return {
-              id: doc.id,
-              ...data,
-              sender: data.senderId === auth.currentUser?.uid ? 'me' : 'them',
-              time: data.timestamp?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'Just now'
-            } as Message;
-          }
-          return null;
-        })
-        .filter((m): m is Message => m !== null);
-      
-      setMessages(allMessages);
-      setIsLoading(false);
-      setMessagesError(null);
-    }, (error) => {
+    if (error) {
       setMessagesError('Failed to load messages.');
+      console.error('Messages fetch error:', error);
       setIsLoading(false);
-      handleFirestoreError(error, OperationType.LIST, 'messages');
-    });
+      return;
+    }
 
-    return () => unsubscribe();
-  }, [userId]);
+    setMessages((data as unknown as MessageRow[]).map((row) => mapMessageRow(row, currentUser.id)));
+    setMessagesError(null);
+    setIsLoading(false);
+  }, [currentUser?.id, userId]);
+
+  // Mark unread messages from the other user as read
+  const markMessagesAsRead = useCallback(async () => {
+    if (!currentUser?.id || !userId) return;
+
+    await supabase
+      .from('messages')
+      .update({ is_read: true })
+      .eq('sender_id', userId)
+      .eq('receiver_id', currentUser.id)
+      .eq('is_read', false);
+  }, [currentUser?.id, userId]);
+
+  // Initial fetch + real-time subscription
+  useEffect(() => {
+    if (!currentUser?.id || !userId) return;
+
+    fetchMessages();
+    markMessagesAsRead();
+
+    // Real-time: listen for messages in this conversation
+    const channel = supabase
+      .channel(`chat-${[currentUser.id, userId].sort().join('-')}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `sender_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageRow;
+          // Only add if it's part of this conversation
+          if (row.receiver_id === currentUser.id) {
+            setMessages((prev) => [...prev, mapMessageRow(row, currentUser.id)]);
+            // Mark as read since user is viewing the conversation
+            supabase
+              .from('messages')
+              .update({ is_read: true })
+              .eq('id', row.id)
+              .then();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `sender_id=eq.${currentUser.id}`,
+        },
+        (payload) => {
+          const row = payload.new as MessageRow;
+          if (row.receiver_id === userId) {
+            // Add own message from real-time (in case sent from another device)
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === row.id)) return prev;
+              return [...prev, mapMessageRow(row, currentUser.id)];
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const updated = payload.new as MessageRow;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === updated.id ? { ...m, isRead: updated.is_read ?? false } : m
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.id, userId, fetchMessages, markMessagesAsRead]);
 
   const [inputValue, setInputValue] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -112,7 +241,7 @@ export function ChatPage() {
   const [isPlayingReview, setIsPlayingReview] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -166,7 +295,7 @@ export function ChatPage() {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (playingMessageIdx !== null || isPlayingReview) {
       interval = setInterval(() => {
         setPlaybackProgress(prev => {
@@ -175,7 +304,7 @@ export function ChatPage() {
             setIsPlayingReview(false);
             return 0;
           }
-          return prev + 2; // Simulate playback speed
+          return prev + 2;
         });
       }, 100);
     } else {
@@ -184,14 +313,12 @@ export function ChatPage() {
     return () => clearInterval(interval);
   }, [playingMessageIdx, isPlayingReview]);
 
-  const togglePlayback = (idx: number, audioUrl?: string) => {
+  const togglePlayback = (idx: number, audioUrl?: string | null) => {
     if (playingMessageIdx === idx) {
-      // Pause
       const audio = audioElementsRef.current.get(String(idx));
       audio?.pause();
       setPlayingMessageIdx(null);
     } else {
-      // Stop any other playing audio
       audioElementsRef.current.forEach(a => a.pause());
       setIsPlayingReview(false);
 
@@ -251,27 +378,27 @@ export function ChatPage() {
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() && selectedFiles.length === 0 && !isRecording && !recordedVoiceNote) return;
-    if (!auth.currentUser || !userId) return;
+    if (!currentUser?.id || !userId) return;
 
-    const messagesRef = collection(db, 'messages');
-    const participants = [auth.currentUser.uid, userId].sort();
-    
     try {
       if (recordedVoiceNote && recordedBlobRef.current) {
-        // Upload real audio to Firebase Storage
-        const audioRef = ref(storage, `voice-notes/${auth.currentUser.uid}/${Date.now()}.webm`);
-        const uploadResult = await uploadBytes(audioRef, recordedBlobRef.current);
-        const voiceNoteUrl = await getDownloadURL(uploadResult.ref);
+        // Upload audio to Supabase Storage
+        const filePath = `${currentUser.id}/${Date.now()}.webm`;
+        const { error: uploadError } = await supabase.storage
+          .from('voice-notes')
+          .upload(filePath, recordedBlobRef.current, { contentType: 'audio/webm', cacheControl: '3600' });
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from('voice-notes').getPublicUrl(filePath);
+        const voiceNoteUrl = urlData.publicUrl;
 
-        await addDoc(messagesRef, {
-          senderId: auth.currentUser.uid,
-          receiverId: userId,
-          participants,
-          voiceNoteUrl,
-          voiceNoteDuration: recordedVoiceNote.duration,
-          voiceNote: { duration: recordedVoiceNote.duration, waveform: recordedVoiceNote.waveform },
-          timestamp: serverTimestamp()
+        const { error } = await supabase.from('messages').insert({
+          sender_id: currentUser.id,
+          receiver_id: userId,
+          voice_note_url: voiceNoteUrl,
+          voice_note_duration: recordedVoiceNote.duration,
         });
+        if (error) throw error;
+
         if (recordedVoiceNote.url) URL.revokeObjectURL(recordedVoiceNote.url);
         recordedBlobRef.current = null;
         setRecordedVoiceNote(null);
@@ -284,32 +411,29 @@ export function ChatPage() {
         type: file.type
       }));
 
-      await addDoc(messagesRef, {
-        senderId: auth.currentUser.uid,
-        receiverId: userId,
-        participants,
-        text: inputValue,
-        attachments: attachments.length > 0 ? attachments : [],
-        timestamp: serverTimestamp()
+      const { error } = await supabase.from('messages').insert({
+        sender_id: currentUser.id,
+        receiver_id: userId,
+        content: inputValue || null,
+        attachments: (attachments.length > 0 ? attachments : []) as unknown as Json,
       });
+      if (error) throw error;
 
       setInputValue('');
       setSelectedFiles([]);
     } catch (error) {
       setSendError('Failed to send message. Please try again.');
       setTimeout(() => setSendError(null), 4000);
-      handleFirestoreError(error, OperationType.CREATE, 'messages');
+      console.error('Send message error:', error);
     }
   };
 
   const handleToggleRecording = async () => {
     if (isRecording) {
-      // Stop recording
       mediaRecorderRef.current?.stop();
       mediaRecorderRef.current?.stream.getTracks().forEach(t => t.stop());
       setIsRecording(false);
     } else {
-      // Start recording
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
@@ -391,7 +515,7 @@ export function ChatPage() {
               <p className="text-sm text-red-400 font-medium">{messagesError}</p>
             </div>
           ) : messages.length === 0 ? (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="flex flex-col items-center justify-center py-20 text-center"
@@ -407,8 +531,8 @@ export function ChatPage() {
           ) : (
             <>
               {messages.map((msg, idx) => {
-                const msgDate = msg.timestamp?.toDate?.() ? msg.timestamp.toDate() : null;
-                const prevDate = idx > 0 && messages[idx - 1].timestamp?.toDate?.() ? messages[idx - 1].timestamp.toDate() : null;
+                const msgDate = msg.createdAt ? new Date(msg.createdAt) : null;
+                const prevDate = idx > 0 && messages[idx - 1].createdAt ? new Date(messages[idx - 1].createdAt!) : null;
                 const showDateSeparator = msgDate && (idx === 0 || !prevDate || msgDate.toDateString() !== prevDate.toDateString());
 
                 let dateLabel = '';
@@ -426,7 +550,7 @@ export function ChatPage() {
                 }
 
                 return (
-                <div key={idx}>
+                <div key={msg.id}>
                 {showDateSeparator && (
                 <div className="flex justify-center my-6">
                   <div className="px-4 py-1 rounded-full bg-surface-container-low/50 backdrop-blur-sm">
@@ -435,20 +559,20 @@ export function ChatPage() {
                 </div>
                 )}
                 {(
-                <motion.div 
-                  key={idx}
+                <motion.div
+                  key={msg.id}
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   className={`flex flex-col ${msg.sender === 'me' ? 'items-end ml-auto' : 'items-start'} max-w-[85%] group`}
                 >
                   <div className={`${
-                    msg.sender === 'me' 
-                      ? 'bg-primary-accent text-on-primary-accent rounded-br-none' 
+                    msg.sender === 'me'
+                      ? 'bg-primary-accent text-on-primary-accent rounded-br-none'
                       : 'bg-surface-container text-on-surface rounded-bl-none border border-white/5'
                   } px-5 py-4 rounded-3xl shadow-xl space-y-3`}>
-                    {msg.text && <p className="text-sm leading-relaxed font-medium">{msg.text}</p>}
-                    
-                    {(msg.voiceNote || msg.voiceNoteUrl) && (
+                    {msg.content && <p className="text-sm leading-relaxed font-medium">{msg.content}</p>}
+
+                    {(msg.voiceNoteUrl) && (
                       <div className="flex items-center gap-4 py-2 min-w-[200px]">
                         <button
                           onClick={() => togglePlayback(idx, msg.voiceNoteUrl)}
@@ -464,12 +588,12 @@ export function ChatPage() {
                           {(msg.voiceNote?.waveform || Array.from({ length: 20 }, () => Math.random() * 100)).map((h, i, arr) => {
                             const isPlayed = playingMessageIdx === idx && (i / arr.length) * 100 <= playbackProgress;
                             return (
-                              <div 
-                                key={i} 
-                                style={{ height: `${Math.max(20, h)}%` }} 
+                              <div
+                                key={i}
+                                style={{ height: `${Math.max(20, h)}%` }}
                                 className={`flex-1 rounded-full transition-colors duration-300 ${
-                                  msg.sender === 'me' 
-                                    ? (isPlayed ? 'bg-white' : 'bg-white/40') 
+                                  msg.sender === 'me'
+                                    ? (isPlayed ? 'bg-white' : 'bg-white/40')
                                     : (isPlayed ? 'bg-primary-accent' : 'bg-primary-accent/40')
                                 }`}
                               />
@@ -477,7 +601,7 @@ export function ChatPage() {
                           })}
                         </div>
                         <span className="text-[10px] font-bold opacity-60">
-                          {msg.voiceNoteDuration || msg.voiceNote?.duration || '0:00'}
+                          {msg.voiceNoteDuration || '0:00'}
                         </span>
                       </div>
                     )}
@@ -485,8 +609,8 @@ export function ChatPage() {
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="space-y-2">
                         {msg.attachments.map((file, fIdx) => (
-                          <div 
-                            key={fIdx} 
+                          <div
+                            key={fIdx}
                             className={`flex items-center gap-3 p-3 rounded-xl ${
                               msg.sender === 'me' ? 'bg-white/10' : 'bg-surface-container-highest'
                             }`}
@@ -501,9 +625,16 @@ export function ChatPage() {
                       </div>
                     )}
                   </div>
-                  <span className={`text-[10px] text-on-surface-variant mt-2 ${msg.sender === 'me' ? 'mr-4' : 'ml-4'} font-medium uppercase tracking-tighter opacity-60`}>
-                    {msg.time}
-                  </span>
+                  <div className={`flex items-center gap-1 mt-2 ${msg.sender === 'me' ? 'mr-4' : 'ml-4'}`}>
+                    <span className="text-[10px] text-on-surface-variant font-medium uppercase tracking-tighter opacity-60">
+                      {msg.time}
+                    </span>
+                    {msg.sender === 'me' && (
+                      msg.isRead
+                        ? <CheckCheck className="w-3.5 h-3.5 text-primary-accent" />
+                        : <Check className="w-3.5 h-3.5 text-on-surface-variant opacity-60" />
+                    )}
+                  </div>
                 </motion.div>
                 )}
                 </div>
@@ -535,14 +666,14 @@ export function ChatPage() {
           {/* File Previews */}
           <AnimatePresence>
             {selectedFiles.length > 0 && (
-              <motion.div 
+              <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 className="flex flex-wrap gap-2 overflow-hidden"
               >
                 {selectedFiles.map((file, idx) => (
-                  <motion.div 
+                  <motion.div
                     key={idx}
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -562,7 +693,7 @@ export function ChatPage() {
           <div className="flex items-center gap-3 bg-surface-container-high/60 backdrop-blur-xl p-2 pl-4 rounded-[28px] border border-white/5 shadow-2xl overflow-hidden">
             <AnimatePresence mode="wait">
               {isRecording ? (
-                <motion.div 
+                <motion.div
                   key="recording"
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
@@ -575,7 +706,7 @@ export function ChatPage() {
                   </div>
                   <div className="flex-1 flex items-center gap-1 h-4">
                     {Array.from({ length: 24 }).map((_, i) => (
-                      <motion.div 
+                      <motion.div
                         key={i}
                         animate={{ height: [4, Math.random() * 16 + 4, 4] }}
                         transition={{ repeat: Infinity, duration: 0.5, delay: i * 0.05 }}
@@ -583,7 +714,7 @@ export function ChatPage() {
                       />
                     ))}
                   </div>
-                  <button 
+                  <button
                     onClick={() => setIsRecording(false)}
                     className="text-on-surface-variant hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest"
                   >
@@ -591,7 +722,7 @@ export function ChatPage() {
                   </button>
                 </motion.div>
               ) : recordedVoiceNote ? (
-                <motion.div 
+                <motion.div
                   key="review"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -599,7 +730,7 @@ export function ChatPage() {
                   className="flex-1 flex items-center gap-4 px-2"
                 >
                   <div className="flex items-center gap-3 bg-primary-accent/10 px-3 py-2 rounded-2xl flex-1">
-                    <button 
+                    <button
                       onClick={toggleReviewPlayback}
                       className="w-8 h-8 rounded-full bg-primary-accent/20 flex items-center justify-center text-primary-accent active:scale-90 transition-all"
                     >
@@ -613,21 +744,21 @@ export function ChatPage() {
                       {recordedVoiceNote.waveform.map((h, i) => {
                         const isPlayed = isPlayingReview && (i / recordedVoiceNote.waveform.length) * 100 <= playbackProgress;
                         return (
-                          <div 
-                            key={i} 
-                            style={{ height: `${Math.max(20, h)}%` }} 
+                          <div
+                            key={i}
+                            style={{ height: `${Math.max(20, h)}%` }}
                             className={`flex-1 rounded-full transition-colors duration-300 ${isPlayed ? 'bg-primary-accent' : 'bg-primary-accent/40'}`}
                           />
                         );
                       })}
                     </div>
                     <span className="text-[10px] font-bold text-primary-accent">
-                      {isPlayingReview 
-                        ? formatDuration(Math.ceil((playbackProgress / 100) * recordingDuration)) 
+                      {isPlayingReview
+                        ? formatDuration(Math.ceil((playbackProgress / 100) * recordingDuration))
                         : recordedVoiceNote.duration}
                     </span>
                   </div>
-                  <button 
+                  <button
                     onClick={discardVoiceNote}
                     className="p-2 text-on-surface-variant hover:text-red-400 transition-colors"
                   >
@@ -635,29 +766,29 @@ export function ChatPage() {
                   </button>
                 </motion.div>
               ) : (
-                <motion.div 
+                <motion.div
                   key="input"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   className="flex-1 flex items-center gap-3"
                 >
-                  <button 
+                  <button
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2 text-primary-accent hover:bg-surface-container-highest rounded-full transition-all"
                   >
                     <Paperclip className="w-6 h-6" />
                   </button>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange} 
-                    multiple 
-                    className="hidden" 
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    multiple
+                    className="hidden"
                   />
-                  <input 
-                    className="flex-grow bg-transparent border-none focus:ring-0 focus:outline-none outline-none text-on-surface placeholder:text-on-surface-variant/50 text-sm font-medium" 
-                    placeholder="Describe your offer..." 
+                  <input
+                    className="flex-grow bg-transparent border-none focus:ring-0 focus:outline-none outline-none text-on-surface placeholder:text-on-surface-variant/50 text-sm font-medium"
+                    placeholder="Describe your offer..."
                     type="text"
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
@@ -669,14 +800,14 @@ export function ChatPage() {
 
             <div className="flex items-center gap-1 pr-1">
               {!inputValue.trim() && selectedFiles.length === 0 && !recordedVoiceNote ? (
-                <button 
+                <button
                   onClick={handleToggleRecording}
                   className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/20' : 'text-on-surface-variant hover:text-primary-accent'}`}
                 >
                   {isRecording ? <Square className="w-6 h-6 fill-current" /> : <Mic className="w-6 h-6" />}
                 </button>
               ) : (
-                <button 
+                <button
                   onClick={handleSendMessage}
                   className="bg-primary-accent text-on-primary-accent p-3 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-90 transition-all"
                 >

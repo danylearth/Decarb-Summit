@@ -4,8 +4,7 @@ import { useUser } from '../context/UserContext';
 import { Avatar, Button } from '../components/UI';
 import { ArrowLeft, Settings, MessageSquare, Plus, CheckCircle2, Linkedin, Twitter, Loader2, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { User } from '../types';
 
 export function ProfilePage() {
@@ -25,17 +24,35 @@ export function ProfilePage() {
     setProfileLoading(true);
     const fetchProfile = async () => {
       try {
-        const userDoc = await getDoc(doc(db, 'users', targetUserId));
-        if (userDoc.exists()) {
-          setProfileUser({ id: userDoc.id, ...userDoc.data() } as User);
-        } else {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', targetUserId)
+          .single();
+
+        if (error && error.code === 'PGRST116') {
           setNotFound(true);
+        } else if (error) {
+          throw error;
+        } else if (data) {
+          setProfileUser({
+            id: data.id,
+            name: data.name,
+            handle: data.handle,
+            role: data.role,
+            company: data.company ?? '',
+            avatar: data.avatar_url ?? '',
+            bio: data.bio ?? '',
+            tags: data.tags ?? [],
+            linkedin: data.linkedin_url ?? '',
+            twitter: data.twitter_url ?? '',
+            isOnline: !!data.is_online,
+            isVerified: !!data.is_verified,
+          });
         }
       } catch (err) {
         setProfileError('Failed to load profile. Please try again.');
-        setProfileLoading(false);
-        handleFirestoreError(err, OperationType.GET, `users/${targetUserId}`);
-        return;
+        console.error('Profile fetch error:', err);
       } finally {
         setProfileLoading(false);
       }

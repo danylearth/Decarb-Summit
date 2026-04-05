@@ -4,8 +4,7 @@ import { useUser } from '../context/UserContext';
 import { Avatar, Card, cn } from '../components/UI';
 import { User, CreditCard, Bell, Eye, Lock, LogOut, ChevronRight, Edit2, Bookmark, Play, FileText, Lightbulb, ArrowLeft, Linkedin, Twitter, BarChart, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
-import { collection, onSnapshot, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { Resource } from '../types';
 
 export function SettingsPage() {
@@ -18,36 +17,29 @@ export function SettingsPage() {
   useEffect(() => {
     if (!user) return;
 
-    const savedRef = collection(db, 'users', user.id, 'saved_resources');
-    const q = query(savedRef, orderBy('savedAt', 'desc'));
-
-    const unsub = onSnapshot(q, async (snapshot) => {
+    const fetchSaved = async () => {
       try {
-        const resources = await Promise.all(
-          snapshot.docs.map(async (d) => {
-            const resourceId = d.data().resourceId;
-            const resDoc = await getDoc(doc(db, 'resources', resourceId));
-            if (resDoc.exists()) {
-              return { id: resDoc.id, ...resDoc.data() } as Resource;
-            }
-            return null;
-          })
-        );
-        setSavedResources(resources.filter((r): r is Resource => r !== null));
+        const { data, error } = await supabase
+          .from('saved_resources')
+          .select('resource_id, resources(*)')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const resources = (data ?? [])
+          .map((row: any) => row.resources as Resource | null)
+          .filter((r): r is Resource => r !== null);
+
+        setSavedResources(resources);
       } catch (err) {
         setSavedError('Failed to load saved insights.');
-        setLoadingSaved(false);
-        handleFirestoreError(err, OperationType.GET, `users/${user.id}/saved_resources`);
-        return;
+        console.error('Saved resources fetch error:', err);
       }
       setLoadingSaved(false);
-    }, (err) => {
-      setSavedError('Failed to load saved insights.');
-      setLoadingSaved(false);
-      handleFirestoreError(err, OperationType.LIST, `users/${user.id}/saved_resources`);
-    });
+    };
 
-    return () => unsub();
+    fetchSaved();
   }, [user]);
 
   if (!user) {
@@ -261,18 +253,18 @@ export function SettingsPage() {
         {/* Dev: Reset onboarding for testing */}
         {import.meta.env.DEV && <div
           onClick={async () => {
-            if (!auth.currentUser) return;
+            if (!user) return;
             if (!confirm('Reset onboarding? You will go through the setup flow again.')) return;
             try {
-              await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+              await supabase.from('profiles').update({
                 onboarded: false,
-                name: auth.currentUser.displayName || 'User',
-                handle: auth.currentUser.email?.split('@')[0] || 'user',
+                name: 'User',
+                handle: user.handle || 'user',
                 role: 'Community Member',
                 company: '',
                 bio: '',
                 tags: [],
-              });
+              }).eq('id', user.id);
               localStorage.clear();
               sessionStorage.clear();
               window.location.href = '/';

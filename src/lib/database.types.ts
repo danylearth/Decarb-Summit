@@ -34,6 +34,117 @@ export type Database = {
   }
   public: {
     Tables: {
+      events: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          speaker: string | null
+          room: string | null
+          track: string | null
+          starts_at: string
+          ends_at: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          speaker?: string | null
+          room?: string | null
+          track?: string | null
+          starts_at: string
+          ends_at: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          speaker?: string | null
+          room?: string | null
+          track?: string | null
+          starts_at?: string
+          ends_at?: string
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      event_bookmarks: {
+        Row: {
+          user_id: string
+          event_id: string
+          created_at: string | null
+        }
+        Insert: {
+          user_id: string
+          event_id: string
+          created_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          event_id?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "event_bookmarks_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_bookmarks_event_id_fkey"; columns: ["event_id"]; isOneToOne: false; referencedRelation: "events"; referencedColumns: ["id"] },
+        ]
+      }
+      event_checkins: {
+        Row: {
+          user_id: string
+          event_id: string
+          checked_in_at: string | null
+        }
+        Insert: {
+          user_id: string
+          event_id: string
+          checked_in_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          event_id?: string
+          checked_in_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "event_checkins_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_checkins_event_id_fkey"; columns: ["event_id"]; isOneToOne: false; referencedRelation: "events"; referencedColumns: ["id"] },
+        ]
+      }
+      questions: {
+        Row: {
+          id: string
+          event_id: string
+          author_id: string
+          content: string
+          upvotes: number
+          is_highlighted: boolean
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          event_id: string
+          author_id: string
+          content: string
+          upvotes?: number
+          is_highlighted?: boolean
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          event_id?: string
+          author_id?: string
+          content?: string
+          upvotes?: number
+          is_highlighted?: boolean
+          created_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "questions_event_id_fkey"; columns: ["event_id"]; isOneToOne: false; referencedRelation: "events"; referencedColumns: ["id"] },
+          { foreignKeyName: "questions_author_id_fkey"; columns: ["author_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
       connections: {
         Row: {
           created_at: string | null
@@ -75,28 +186,37 @@ export type Database = {
       }
       messages: {
         Row: {
-          content: string
+          attachments: Json | null
+          content: string | null
           created_at: string | null
           id: string
           is_read: boolean | null
           receiver_id: string
           sender_id: string
+          voice_note_duration: string | null
+          voice_note_url: string | null
         }
         Insert: {
-          content: string
+          attachments?: Json | null
+          content?: string | null
           created_at?: string | null
           id?: string
           is_read?: boolean | null
           receiver_id: string
           sender_id: string
+          voice_note_duration?: string | null
+          voice_note_url?: string | null
         }
         Update: {
-          content?: string
+          attachments?: Json | null
+          content?: string | null
           created_at?: string | null
           id?: string
           is_read?: boolean | null
           receiver_id?: string
           sender_id?: string
+          voice_note_duration?: string | null
+          voice_note_url?: string | null
         }
         Relationships: [
           {

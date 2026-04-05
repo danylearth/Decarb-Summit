@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { Resource } from '../types';
 import { Card } from '../components/UI';
 import { Play, Download, FileText, BarChart3, Clock, ChevronRight, Search, X, BookOpen, AlertTriangle } from 'lucide-react';
@@ -16,26 +15,22 @@ export function ResourcesPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    const q = collection(db, 'resources');
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        setResources([]);
-        setLoading(false);
-        return;
-      }
-      const resourcesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Resource[];
-      setResources(resourcesData);
-      setLoading(false);
-    }, (err) => {
-      setError('Failed to load resources. Please try again.');
-      setLoading(false);
-      handleFirestoreError(err, OperationType.LIST, 'resources');
-    });
+    const fetchResources = async () => {
+      const { data, error: fetchError } = await supabase
+        .from('resources')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    return () => unsubscribe();
+      if (fetchError) {
+        setError('Failed to load resources. Please try again.');
+        console.error('Resources fetch error:', fetchError);
+      } else {
+        setResources((data ?? []) as Resource[]);
+      }
+      setLoading(false);
+    };
+
+    fetchResources();
   }, []);
 
   const filteredResources = resources.filter(r => 

@@ -57,3 +57,27 @@ export interface Message {
   timestamp: string;
   isUnread?: boolean;
 }
+
+export interface Event {
+  id: string;
+  title: string;
+  description?: string;
+  speaker?: string;
+  room?: string;
+  track?: string;
+  starts_at: string;
+  ends_at: string;
+  created_at?: string;
+}
+
+export interface Question {
+  id: string;
+  event_id: string;
+  author_id: string;
+  authorName?: string;
+  authorAvatar?: string;
+  content: string;
+  upvotes: number;
+  is_highlighted: boolean;
+  created_at?: string;
+}
